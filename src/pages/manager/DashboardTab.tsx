@@ -680,13 +680,12 @@ export default function DashboardTab() {
       {/* ANALYST SECTION 1: TABEL MENU TERLARIS (HANYA MENU SATUAN) */}
       <div className="card" style={{ padding: '25px', borderRadius: '10px', marginBottom: '25px', background: 'var(--bg-card)' }}>
         <h3 style={{ marginTop: 0, marginBottom: '15px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-          Analisis Performa & Peringkat Menu Terlaris
+          Analisis Performa Menu Terlaris
         </h3>
         <div className="table-responsive">
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left' }}>
-                <th style={{ padding: '12px', textAlign: 'center' }}>Peringkat</th>
                 <th style={{ padding: '12px' }}>Nama Menu</th>
                 <th style={{ padding: '12px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.1)' }}>Total Terjual / Terpakai</th>
                 <th style={{ padding: '12px', textAlign: 'right' }}>Total Estimasi Omset</th>
@@ -695,13 +694,10 @@ export default function DashboardTab() {
             </thead>
             <tbody>
               {menuTerlarisList.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: '20px' }}>Belum ada data penjualan menu pada periode ini.</td></tr>
+                <tr><td colSpan={4} style={{ textAlign: 'center', padding: '20px' }}>Belum ada data penjualan menu pada periode ini.</td></tr>
               ) : (
-                menuTerlarisList.map((m, idx) => (
+                menuTerlarisList.map((m) => (
                   <tr key={m.nama_menu} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      #{idx + 1}
-                    </td>
                     <td style={{ padding: '12px', fontWeight: 'bold' }}>{m.nama_menu}</td>
                     <td style={{ padding: '12px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.05)', color: '#10b981' }}>
                       <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>
