@@ -12,7 +12,6 @@ interface AppState {
   distribusi_bahan: any[];
   distribusi_makanan: any[];
   produksi_chef: any[];
-  staff_meal: any[];
   transfer_items: any[];
   transfer_item: any[];
   status_gaji: any[];
@@ -27,7 +26,6 @@ interface AppState {
   setStatusGaji: (data: any[]) => void;
   setPeriodeDitutup: (data: any[]) => void;
   setProduksiChef: (data: any[]) => void;
-  setStaffMeal: (data: any[]) => void;
   setPengeluaran: (data: any[]) => void;
   setDistribusiBahan: (data: any[]) => void;
   setDistribusiMakanan: (data: any[]) => void;
@@ -47,7 +45,6 @@ export const useAppStore = create<AppState>((set) => ({
   distribusi_bahan: [],
   distribusi_makanan: [],
   produksi_chef: [],
-  staff_meal: [],
   transfer_items: [],
   transfer_item: [],
   status_gaji: [],
@@ -87,7 +84,6 @@ export const useAppStore = create<AppState>((set) => ({
   setStatusGaji: (data) => set({ status_gaji: data }),
   setPeriodeDitutup: (data) => set({ periode_ditutup: data }),
   setProduksiChef: (data) => set({ produksi_chef: data }),
-  setStaffMeal: (data) => set({ staff_meal: data }),
   setPengeluaran: (data) => set({ pengeluaran: data }),
   setDistribusiBahan: (data) => set({ distribusi_bahan: data }),
   setDistribusiMakanan: (data) => set({ distribusi_makanan: data }),
