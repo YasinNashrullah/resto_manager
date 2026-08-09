@@ -9,7 +9,7 @@ export default function Home() {
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  // Waiter modal states
+  // Waiter modal state
   const [modalWaiterOpen, setModalWaiterOpen] = useState(false);
   const { pegawai } = useAppStore();
 
@@ -97,12 +97,27 @@ export default function Home() {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
         }
+        .btn-calculator {
+            background: #8b5cf6;
+        }
+        .btn-calculator:hover {
+            background: #7c3aed;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+        }
         .btn-chef {
             background: #ed8936;
         }
-        .btn-chef:hover {
+        .btn-chef:hover:not(:disabled) {
             background: #dd6b20;
             box-shadow: 0 4px 12px rgba(237, 137, 54, 0.3);
+        }
+        .btn-chef:disabled {
+            background: #4a5568;
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
         }
         .btn-manager {
             background: #48bb78;
@@ -126,8 +141,12 @@ export default function Home() {
           Masuk sebagai Waiter
         </button>
 
-        <button onClick={() => navigate('/chef')} className="btn-role btn-chef">
-          Masuk sebagai Chef
+        <button onClick={() => navigate('/waiter/kalkulator')} className="btn-role btn-calculator">
+          Kalkulator Duty
+        </button>
+
+        <button disabled className="btn-role btn-chef" title="Fitur Chef Sedang Dalam Pemeliharaan">
+          Masuk sebagai Chef Maintenance
         </button>
 
         <button onClick={() => setModalPinOpen(true)} className="btn-role btn-manager">
@@ -201,7 +220,7 @@ export default function Home() {
               &times;
             </span>
             <h2 style={{ marginTop: 0, color: 'var(--text-primary)' }}>Pilih Nama Pegawai</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.9rem' }}>Silakan pilih nama Anda (Waiter) untuk melanjutkan.</p>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.9rem' }}>Silakan pilih nama Anda untuk melanjutkan.</p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
               {pegawai && pegawai.length > 0 ? (
@@ -227,7 +246,7 @@ export default function Home() {
                       onMouseOver={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--accent-color)'; }}
                       onMouseOut={(e) => { e.currentTarget.style.background = 'var(--bg-dark)'; e.currentTarget.style.borderColor = 'var(--border-color)'; }}
                     >
-                      {p.nama_ic} {p.jabatan ? `(${p.jabatan})` : ''}
+                      {p.nama_ic} {p.jabatan ? `- ${p.jabatan}` : ''}
                     </button>
                   ))
                 )
