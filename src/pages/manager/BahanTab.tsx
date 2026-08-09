@@ -255,14 +255,34 @@ export default function BahanTab() {
             {Object.keys(stockPegawai).length === 0 ? (
               <div style={{ color: '#777', width: '100%', textAlign: 'center', gridColumn: '1 / -1' }}>Belum ada stok bahan yang dipegang pegawai.</div>
             ) : (
-              Object.entries(stockPegawai).map(([namaChef, bahanList]) => {
-                if (namaChef === "Sistem (Koreksi)") return null;
-                const activeBahan = Object.entries(bahanList).filter(([_, qty]) => Math.abs(qty) >= 0.001);
-                if (activeBahan.length === 0) return null;
+              (() => {
+                const getJabatanRank = (jabatan: string): number => {
+                  const j = (jabatan || '').toLowerCase().trim();
+                  if (j.includes('manager') || j.includes('pemilik') || j.includes('owner')) return 1;
+                  if (j.includes('head chef') || j.includes('head-chef') || j.includes('headchef')) return 2;
+                  if (j.includes('chef') || j.includes('koki') || j.includes('dapur')) return 3;
+                  if (j.includes('waiter') || j.includes('pelayan') || j.includes('pramusaji')) return 4;
+                  if (j.includes('kasir') || j.includes('cashier')) return 5;
+                  return 6;
+                };
 
-                const pegawaiInfo = store.pegawai.find(p => p.nama_ic === namaChef);
-                const jabatan = pegawaiInfo ? pegawaiInfo.jabatan : "Pegawai";
-                const inisial = namaChef.charAt(0).toUpperCase();
+                const sortedEntries = Object.entries(stockPegawai).sort(([nA], [nB]) => {
+                  const pA = store.pegawai.find(p => p.nama_ic === nA);
+                  const pB = store.pegawai.find(p => p.nama_ic === nB);
+                  const rA = getJabatanRank(pA ? pA.jabatan : '');
+                  const rB = getJabatanRank(pB ? pB.jabatan : '');
+                  if (rA !== rB) return rA - rB;
+                  return nA.localeCompare(nB, 'id', { sensitivity: 'base' });
+                });
+
+                return sortedEntries.map(([namaChef, bahanList]) => {
+                  if (namaChef === "Sistem (Koreksi)") return null;
+                  const activeBahan = Object.entries(bahanList).filter(([_, qty]) => Math.abs(qty) >= 0.001);
+                  if (activeBahan.length === 0) return null;
+
+                  const pegawaiInfo = store.pegawai.find(p => p.nama_ic === namaChef);
+                  const jabatan = pegawaiInfo ? pegawaiInfo.jabatan : "Pegawai";
+                  const inisial = namaChef.charAt(0).toUpperCase();
 
                 return (
                   <div key={namaChef} style={{ background: 'var(--bg-card)', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)' }}>
@@ -270,9 +290,9 @@ export default function BahanTab() {
                       <div style={{ background: 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px' }}>
                         {inisial}
                       </div>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600 }}>{namaChef}</h4>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{jabatan}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={namaChef}>{namaChef}</h4>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jabatan}</span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -282,8 +302,8 @@ export default function BahanTab() {
                         const isMinus = qty < 0;
                         return (
                           <div key={id_bahan} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg-hover)', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '5px' }}>
-                            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{bahanInfo.nama_bahan}</span>
-                            <span style={{ background: isMinus ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)', color: isMinus ? 'var(--danger-color)' : 'var(--success-color)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem' }}>
+                            <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={bahanInfo.nama_bahan}>{bahanInfo.nama_bahan}</span>
+                            <span style={{ background: isMinus ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)', color: isMinus ? 'var(--danger-color)' : 'var(--success-color)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
                               {qty} {bahanInfo.satuan}
                             </span>
                           </div>
@@ -292,8 +312,9 @@ export default function BahanTab() {
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()
+          )}
           </div>
         </div>
       </div>

@@ -7,11 +7,29 @@ export default function AnalisisPegawaiTab() {
   const store = useAppStore();
 
   const [showResign, setShowResign] = useState(false);
-  const activePegawaiList = (store.pegawai || []).filter(p => showResign || p.status_kontrak === 'Aktif');
+
+  const getJabatanRank = (jabatan: string): number => {
+    const j = (jabatan || '').toLowerCase().trim();
+    if (j.includes('manager') || j.includes('pemilik') || j.includes('owner')) return 1;
+    if (j.includes('head chef') || j.includes('head-chef') || j.includes('headchef')) return 2;
+    if (j.includes('chef') || j.includes('koki') || j.includes('dapur')) return 3;
+    if (j.includes('waiter') || j.includes('pelayan') || j.includes('pramusaji')) return 4;
+    if (j.includes('kasir') || j.includes('cashier')) return 5;
+    return 6;
+  };
+
+  const activePegawaiList = (store.pegawai || [])
+    .filter(p => showResign || p.status_kontrak === 'Aktif')
+    .sort((a, b) => {
+      const rA = getJabatanRank(a.jabatan);
+      const rB = getJabatanRank(b.jabatan);
+      if (rA !== rB) return rA - rB;
+      return a.nama_ic.localeCompare(b.nama_ic, 'id', { sensitivity: 'base' });
+    });
 
   // Selected Employee & Period State
   const [selectedPegawai, setSelectedPegawai] = useState<string>('');
-  const [periodType, setPeriodType] = useState<'bulan' | 'minggu' | 'kustom'>('bulan');
+  const [periodType, setPeriodType] = useState<'bulan' | 'bulan_lalu' | 'minggu' | 'minggu_lalu' | 'semua' | 'kustom'>('bulan');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -31,6 +49,9 @@ export default function AnalisisPegawaiTab() {
 
   // Menu Sales & Ingredient Usage Analysis State
   const [pegawaiMenuList, setPegawaiMenuList] = useState<any[]>([]);
+  const [pegawaiPaketList, setPegawaiPaketList] = useState<any[]>([]);
+  const [pegawaiSatuanLangsungList, setPegawaiSatuanLangsungList] = useState<any[]>([]);
+  const [allPegawaiComparisonList, setAllPegawaiComparisonList] = useState<any[]>([]);
   const [bahanUsageList, setBahanUsageList] = useState<any[]>([]);
   const [heatmapMatrix, setHeatmapMatrix] = useState<any[]>([]);
   const [hoveredDay, setHoveredDay] = useState<any | null>(null);
@@ -102,6 +123,13 @@ export default function AnalisisPegawaiTab() {
         filterStart = `${cYear}-${pad(cMonth + 1)}-01`;
         const lastDay = new Date(cYear, cMonth + 1, 0).getDate();
         filterEnd = `${cYear}-${pad(cMonth + 1)}-${pad(lastDay)}`;
+      } else if (periodType === 'bulan_lalu') {
+        const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const pMonth = prevMonth.getMonth();
+        const pYear = prevMonth.getFullYear();
+        filterStart = `${pYear}-${pad(pMonth + 1)}-01`;
+        const lastDay = new Date(pYear, pMonth + 1, 0).getDate();
+        filterEnd = `${pYear}-${pad(pMonth + 1)}-${pad(lastDay)}`;
       } else if (periodType === 'minggu') {
         const d = new Date(today);
         const day = d.getDay(); // 0 = Minggu (Sunday)
@@ -111,17 +139,38 @@ export default function AnalisisPegawaiTab() {
         sat.setDate(sun.getDate() + 6); // Sabtu (Saturday)
         filterStart = `${sun.getFullYear()}-${pad(sun.getMonth() + 1)}-${pad(sun.getDate())}`;
         filterEnd = `${sat.getFullYear()}-${pad(sat.getMonth() + 1)}-${pad(sat.getDate())}`;
+      } else if (periodType === 'minggu_lalu') {
+        const d = new Date(today);
+        const day = d.getDay(); // 0 = Minggu (Sunday)
+        const lastSun = new Date(d);
+        lastSun.setDate(d.getDate() - day - 7); // Sunday of previous week
+        const lastSat = new Date(lastSun);
+        lastSat.setDate(lastSun.getDate() + 6); // Saturday of previous week
+        filterStart = `${lastSun.getFullYear()}-${pad(lastSun.getMonth() + 1)}-${pad(lastSun.getDate())}`;
+        filterEnd = `${lastSat.getFullYear()}-${pad(lastSat.getMonth() + 1)}-${pad(lastSat.getDate())}`;
+      } else if (periodType === 'semua') {
+        filterStart = '2000-01-01';
+        filterEnd = '2099-12-31';
       }
 
-      // Fetch Duty Data for Selected Pegawai
-      let dutyQ = supabase.from('duty').select('*').eq('nama_ic', selectedPegawai).gte('tanggal', filterStart).lte('tanggal', filterEnd);
-      let pengeluaranQ = supabase.from('pengeluaran').select('*').eq('nama_pembeli', selectedPegawai).gte('tanggal', filterStart).lte('tanggal', filterEnd);
-      let produksiQ = supabase.from('produksi_chef').select('*').eq('nama_ic_chef', selectedPegawai).gte('tanggal', filterStart).lte('tanggal', filterEnd);
+      // Fetch Duty Data for Selected Pegawai & All Duties for Comparison Grid
+      let dutyQ = supabase.from('duty').select('*').eq('nama_ic', selectedPegawai);
+      let pengeluaranQ = supabase.from('pengeluaran').select('*').eq('nama_pembeli', selectedPegawai);
+      let produksiQ = supabase.from('produksi_chef').select('*').eq('nama_ic_chef', selectedPegawai);
+      let allDutyQ = supabase.from('duty').select('*');
 
-      const [dutyRes, pengeluaranRes, produksiRes] = await Promise.all([
+      if (periodType !== 'semua') {
+        dutyQ = dutyQ.gte('tanggal', filterStart).lte('tanggal', filterEnd);
+        pengeluaranQ = pengeluaranQ.gte('tanggal', filterStart).lte('tanggal', filterEnd);
+        produksiQ = produksiQ.gte('tanggal', filterStart).lte('tanggal', filterEnd);
+        allDutyQ = allDutyQ.gte('tanggal', filterStart).lte('tanggal', filterEnd);
+      }
+
+      const [dutyRes, pengeluaranRes, produksiRes, allDutyRes] = await Promise.all([
         dutyQ.order('id_duty', { ascending: false }),
         pengeluaranQ.order('id_pengeluaran', { ascending: false }),
-        produksiQ.order('id_produksi', { ascending: false })
+        produksiQ.order('id_produksi', { ascending: false }),
+        allDutyQ
       ]);
 
       const dList = (dutyRes.data || []).sort((a: any, b: any) => {
@@ -132,6 +181,7 @@ export default function AnalisisPegawaiTab() {
       });
       const pList = pengeluaranRes.data || [];
       const cList = produksiRes.data || [];
+      const allDutiesList = allDutyRes.data || [];
 
       setDutyLogs(dList);
       setPengeluaranLogs(pList);
@@ -141,7 +191,17 @@ export default function AnalisisPegawaiTab() {
       let calcOmset = 0;
       let calcPorsiTerjual = 0;
       const dateDutyMap = new Map();
-      const menuMap: Record<string, { nama_menu: string, tipe_menu: string, qty: number, harga: number, total_omset: number }> = {};
+      const menuSalesMap: Record<string, { 
+        id_menu: string, 
+        nama_menu: string, 
+        tipe_menu: string, 
+        qty_langsung: number, 
+        qty_paket: number, 
+        total_qty: number, 
+        harga_jual: number, 
+        omset: number, 
+        resep: any[] 
+      }> = {};
 
       dList.forEach(d => {
         const omset = floorToTwo(d.total_omset) || 0;
@@ -164,25 +224,58 @@ export default function AnalisisPegawaiTab() {
         const items = detail.items || [];
         items.forEach((item: any) => {
           const itemQty = (Number(item.qty) || 0);
+          if (itemQty <= 0) return;
           calcPorsiTerjual += itemQty;
 
-          if (itemQty > 0) {
-            const mObj = findMenuObj(item.id_menu || item.nama_menu);
-            const mName = (item.nama_menu && item.nama_menu !== 'Unknown') ? item.nama_menu : (mObj ? mObj.nama_menu : (item.id_menu || 'Menu'));
-            const tipe = mObj ? mObj.tipe_menu : 'Satuan';
-            const harga = mObj ? (floorToTwo(mObj.harga_jual) || 0) : (floorToTwo(item.harga) || 0);
+          const menuInfo = findMenuObj(item.id_menu || item.nama_menu);
+          const menuName = (item.nama_menu && item.nama_menu !== 'Unknown') ? item.nama_menu : (menuInfo ? menuInfo.nama_menu : (item.id_menu || 'Menu'));
+          const menuId = menuInfo ? menuInfo.id_menu : item.id_menu;
+          const tipeMenu = menuInfo ? menuInfo.tipe_menu : 'Satuan';
+          const hargaJual = menuInfo ? (floorToTwo(menuInfo.harga_jual) || 0) : (floorToTwo(item.harga) || 0);
 
-            if (!menuMap[mName]) {
-              menuMap[mName] = {
-                nama_menu: mName,
-                tipe_menu: tipe,
-                qty: 0,
-                harga: harga,
-                total_omset: 0
-              };
-            }
-            menuMap[mName].qty += itemQty;
-            menuMap[mName].total_omset += (itemQty * harga);
+          if (!menuSalesMap[menuName]) {
+            menuSalesMap[menuName] = { 
+              id_menu: menuId,
+              nama_menu: menuName,
+              tipe_menu: tipeMenu,
+              qty_langsung: 0, 
+              qty_paket: 0, 
+              total_qty: 0, 
+              harga_jual: hargaJual,
+              omset: 0, 
+              resep: menuInfo ? (menuInfo.resep || []) : []
+            };
+          }
+
+          // Direct Sales by this employee
+          menuSalesMap[menuName].qty_langsung += itemQty;
+          menuSalesMap[menuName].total_qty += itemQty;
+          menuSalesMap[menuName].omset += (itemQty * hargaJual);
+
+          // If item sold is a Paket, accumulate sub-menu component usage for this employee
+          if (tipeMenu === 'Paket' && menuInfo && Array.isArray(menuInfo.resep)) {
+            menuInfo.resep.forEach((r: any) => {
+              const subId = r.id_menu_satuan || r.id_menu || r.id;
+              const subObj = findMenuObj(subId);
+              const subName = subObj ? subObj.nama_menu : String(subId);
+              const subQty = (Number(r.qty) || 1) * itemQty;
+
+              if (!menuSalesMap[subName]) {
+                menuSalesMap[subName] = {
+                  id_menu: subObj ? subObj.id_menu : subId,
+                  nama_menu: subName,
+                  tipe_menu: 'Satuan',
+                  qty_langsung: 0,
+                  qty_paket: 0,
+                  total_qty: 0,
+                  harga_jual: subObj ? (floorToTwo(subObj.harga_jual) || 0) : 0,
+                  omset: 0,
+                  resep: subObj ? (subObj.resep || []) : []
+                };
+              }
+              menuSalesMap[subName].qty_paket += subQty;
+              menuSalesMap[subName].total_qty += subQty;
+            });
           }
         });
 
@@ -196,13 +289,48 @@ export default function AnalisisPegawaiTab() {
         dayStat.duty_count += 1;
       });
 
-      const menuArray = Object.values(menuMap).map(m => ({
-        ...m,
-        total_omset: floorToTwo(m.total_omset),
-        kontribusi: calcOmset > 0 ? floorToTwo((m.total_omset / calcOmset) * 100) : 0
-      })).sort((a, b) => b.qty - a.qty);
+      const allMenuSales = Object.entries(menuSalesMap).map(([name, data]) => {
+        const isPaket = data.tipe_menu === 'Paket';
+        const totalQty = data.total_qty;
+        const calculatedOmset = isPaket 
+          ? data.omset 
+          : (data.harga_jual > 0 ? totalQty * data.harga_jual : data.omset);
 
-      setPegawaiMenuList(menuArray);
+        return {
+          nama_menu: name,
+          id_menu: data.id_menu,
+          tipe_menu: data.tipe_menu,
+          qty_langsung: data.qty_langsung,
+          qty_paket: data.qty_paket,
+          total_qty: totalQty,
+          qty: totalQty,
+          harga_jual: data.harga_jual,
+          harga: data.harga_jual,
+          omset: calculatedOmset,
+          total_omset: calculatedOmset,
+          resep: data.resep
+        };
+      });
+
+      // Filter Satuan Only for table Analisis Performa Menu Satuan oleh Pegawai
+      const satuanList = allMenuSales
+        .filter(m => m.tipe_menu !== 'Paket' && m.total_qty > 0)
+        .sort((a, b) => b.total_qty - a.total_qty);
+
+      const sumSatuanOmset = satuanList.reduce((acc, m) => acc + m.total_omset, 0);
+
+      const pegawaiMenuListWithContrib = satuanList.map(m => ({
+        ...m,
+        kontribusi: sumSatuanOmset > 0 ? floorToTwo((m.total_omset / sumSatuanOmset) * 100) : 0
+      }));
+
+      setPegawaiMenuList(pegawaiMenuListWithContrib);
+
+      const paketList = allMenuSales.filter(m => m.tipe_menu === 'Paket' && m.qty_langsung > 0);
+      const satuanLangsungList = allMenuSales.filter(m => m.tipe_menu !== 'Paket' && m.qty_langsung > 0);
+
+      setPegawaiPaketList(paketList);
+      setPegawaiSatuanLangsungList(satuanLangsungList);
 
       // 2. Calculate Total Jam & Gaji Estimasi (Unified with KeuanganTab)
       let calcJam = 0;
@@ -232,11 +360,13 @@ export default function AnalisisPegawaiTab() {
         calcPorsiMasak += (floorToTwo(c.qty) || 0);
       });
 
+      const calcTotalMenuSatuan = satuanList.reduce((acc, m) => acc + m.total_qty, 0);
+
       setTotalOmset(calcOmset);
       setTotalJamDuty(calcJam);
       setTotalGajiEstimasi(calcGaji);
       setTotalPembelianBahan(calcPembelian);
-      setTotalPorsiTerjual(calcPorsiTerjual);
+      setTotalPorsiTerjual(calcTotalMenuSatuan);
       setTotalPorsiMasak(calcPorsiMasak);
 
       // 4. Ingredient Usage Analysis for This IC's Sales
@@ -295,8 +425,19 @@ export default function AnalisisPegawaiTab() {
 
       // 5. Generate Dynamic Activity Grid (7 Days for Weekly, Full Month for Monthly)
       const matrix: any[] = [];
-      const startDateObj = new Date(filterStart);
-      const endDateObj = new Date(filterEnd);
+      let heatStart = filterStart;
+      let heatEnd = filterEnd;
+
+      if (periodType === 'semua') {
+        // Safe 30-day range for heatmap calendar when period is "semua" to prevent 100-year loop freeze
+        const dStart = new Date(today);
+        dStart.setDate(dStart.getDate() - 30);
+        heatStart = `${dStart.getFullYear()}-${pad(dStart.getMonth() + 1)}-${pad(dStart.getDate())}`;
+        heatEnd = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      }
+
+      const startDateObj = new Date(heatStart);
+      const endDateObj = new Date(heatEnd);
 
       for (let dt = new Date(startDateObj); dt <= endDateObj; dt.setDate(dt.getDate() + 1)) {
         const yyyy = dt.getFullYear();
@@ -327,6 +468,92 @@ export default function AnalisisPegawaiTab() {
       }
 
       setHeatmapMatrix(matrix);
+
+      // 6. Calculate All Staff Comparison Grid (Sorted Alphabetically by Employee Name)
+      const pegawaiCompMap: Record<string, Record<string, { total_qty: number, harga_jual: number, total_omset: number }>> = {};
+
+      allDutiesList.forEach((d: any) => {
+        const empName = d.nama_ic;
+        if (!empName) return;
+
+        if (!pegawaiCompMap[empName]) {
+          pegawaiCompMap[empName] = {};
+        }
+
+        const items = d.detail_jual?.items || [];
+        items.forEach((item: any) => {
+          const itemQty = Number(item.qty) || 0;
+          if (itemQty <= 0) return;
+
+          const menuInfo = findMenuObj(item.id_menu || item.nama_menu);
+          const menuName = (item.nama_menu && item.nama_menu !== 'Unknown') ? item.nama_menu : (menuInfo ? menuInfo.nama_menu : (item.id_menu || 'Menu'));
+          const tipeMenu = menuInfo ? menuInfo.tipe_menu : 'Satuan';
+          const hargaJual = menuInfo ? (floorToTwo(menuInfo.harga_jual) || 0) : (floorToTwo(item.harga) || 0);
+
+          if (tipeMenu !== 'Paket') {
+            if (!pegawaiCompMap[empName][menuName]) {
+              pegawaiCompMap[empName][menuName] = { total_qty: 0, harga_jual: hargaJual, total_omset: 0 };
+            }
+            pegawaiCompMap[empName][menuName].total_qty += itemQty;
+            pegawaiCompMap[empName][menuName].total_omset += (itemQty * hargaJual);
+          } else if (menuInfo && Array.isArray(menuInfo.resep)) {
+            menuInfo.resep.forEach((r: any) => {
+              const subId = r.id_menu_satuan || r.id_menu || r.id;
+              const subObj = findMenuObj(subId);
+              const subName = subObj ? subObj.nama_menu : String(subId);
+              const subQty = (Number(r.qty) || 1) * itemQty;
+              const subHarga = subObj ? (floorToTwo(subObj.harga_jual) || 0) : 0;
+
+              if (!pegawaiCompMap[empName][subName]) {
+                pegawaiCompMap[empName][subName] = { total_qty: 0, harga_jual: subHarga, total_omset: 0 };
+              }
+              pegawaiCompMap[empName][subName].total_qty += subQty;
+              pegawaiCompMap[empName][subName].total_omset += (subQty * subHarga);
+            });
+          }
+        });
+      });
+
+      // Active staff names sorted alphabetically
+      const activeStaff = (store.pegawai || []).filter(p => showResign ? true : p.status_kontrak === 'Aktif');
+      const allEmpNames = Array.from(new Set([
+        ...activeStaff.map(p => p.nama_ic),
+        ...Object.keys(pegawaiCompMap)
+      ])).sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' }));
+
+      const comparisonArray = allEmpNames.map(empName => {
+        const menuEntriesMap = pegawaiCompMap[empName] || {};
+        const items = Object.entries(menuEntriesMap)
+          .map(([namaMenu, info]) => ({
+            nama_menu: namaMenu,
+            total_qty: info.total_qty,
+            harga_jual: info.harga_jual,
+            total_omset: info.total_omset
+          }))
+          .sort((a, b) => a.nama_menu.localeCompare(b.nama_menu, 'id', { sensitivity: 'base' }));
+
+        const totalPorsiEmp = items.reduce((acc, it) => acc + it.total_qty, 0);
+        const totalOmsetEmp = items.reduce((acc, it) => acc + it.total_omset, 0);
+
+        const empObj = (store.pegawai || []).find(p => p.nama_ic === empName);
+
+        return {
+          nama_ic: empName,
+          jabatan: empObj ? empObj.jabatan : 'Pegawai',
+          items,
+          totalPorsi: totalPorsiEmp,
+          totalOmset: totalOmsetEmp
+        };
+      });
+
+      comparisonArray.sort((a, b) => {
+        const rA = getJabatanRank(a.jabatan);
+        const rB = getJabatanRank(b.jabatan);
+        if (rA !== rB) return rA - rB;
+        return a.nama_ic.localeCompare(b.nama_ic, 'id', { sensitivity: 'base' });
+      });
+
+      setAllPegawaiComparisonList(comparisonArray);
     } catch (err) {
       console.error("Error analyzing pegawai data:", err);
     } finally {
@@ -376,7 +603,10 @@ export default function AnalisisPegawaiTab() {
               onChange={e => setPeriodType(e.target.value as any)}
             >
               <option value="bulan">Bulan Ini</option>
+              <option value="bulan_lalu">Bulan Lalu</option>
               <option value="minggu">Minggu Ini</option>
+              <option value="minggu_lalu">Minggu Lalu</option>
+              <option value="semua">Semua Waktu</option>
               <option value="kustom">Kustom Tanggal</option>
             </select>
 
@@ -415,11 +645,10 @@ export default function AnalisisPegawaiTab() {
         <StatCard title="Total Jam Duty" value={`${floorToTwo(totalJamDuty)} Jam`} colors={['#1e293b', '#334155']} />
         <StatCard title="Estimasi Gaji & Komisi" value={formatCurrency(totalGajiEstimasi)} colors={['#1e293b', '#334155']} />
         <StatCard title="Pembelian Bahan (Restock)" value={formatCurrency(totalPembelianBahan)} colors={['#1e293b', '#334155']} />
-        <StatCard 
-          title={selectedPegawaiObj?.jabatan === 'Chef' ? "Porsi Diproduksi Dapur" : "Total Porsi Terjual"} 
-          value={`${selectedPegawaiObj?.jabatan === 'Chef' ? totalPorsiMasak : totalPorsiTerjual} Porsi`} 
-          colors={['#1e293b', '#334155']} 
-        />
+        <StatCard title="Total Menu Satuan Terjual" value={`${totalPorsiTerjual} Porsi`} colors={['#1e293b', '#334155']} />
+        {selectedPegawaiObj?.jabatan === 'Chef' && (
+          <StatCard title="Porsi Diproduksi Dapur" value={`${totalPorsiMasak} Porsi`} colors={['#1e293b', '#334155']} />
+        )}
       </div>
 
       {/* 🟩 KALENDER KEAKTIFAN DUTY */}
@@ -457,8 +686,8 @@ export default function AnalisisPegawaiTab() {
                 onMouseEnter={() => setHoveredDay(item)}
                 onMouseLeave={() => setHoveredDay(null)}
                 style={{ 
-                  flex: periodType === 'minggu' ? 1 : 'none',
-                  minWidth: periodType === 'minggu' ? '60px' : '32px',
+                  flex: (periodType === 'minggu' || periodType === 'minggu_lalu') ? 1 : 'none',
+                  minWidth: (periodType === 'minggu' || periodType === 'minggu_lalu') ? '60px' : '32px',
                   height: '42px', 
                   borderRadius: '6px', 
                   background: bg, 
@@ -501,37 +730,38 @@ export default function AnalisisPegawaiTab() {
         )}
       </div>
 
-      {/* 🍔 TABEL PENJUALAN MENU OLEH PEGAWAI (TERLETAK DI ATAS PENGGUNAAN BAHAN) */}
+      {/* TABEL TOTAL MENU SATUAN TERJUAL OLEH PEGAWAI */}
       <div className="card mb-20" style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', marginBottom: '25px' }}>
-        <h3 style={{ marginTop: 0, marginBottom: '15px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-          Penjualan Menu oleh {selectedPegawai}
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>
+            Total Menu Satuan Terjual oleh {selectedPegawai} (Termasuk Penggunaan Dalam Paket)
+          </h3>
+          <div style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+            Total: {totalPorsiTerjual} Porsi
+          </div>
+        </div>
         <div className="table-responsive">
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left' }}>
-                <th style={{ padding: '12px' }}>Nama Menu / Paket</th>
-                <th style={{ padding: '12px', textAlign: 'center' }}>Tipe Menu</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>Terjual (Qty)</th>
+                <th style={{ padding: '12px' }}>Nama Menu Satuan</th>
+                <th style={{ padding: '12px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.1)' }}>Total Terjual / Terpakai</th>
                 <th style={{ padding: '12px', textAlign: 'right' }}>Harga Satuan ($)</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>Total Omset ($)</th>
+                <th style={{ padding: '12px', textAlign: 'right' }}>Total Estimasi Omset ($)</th>
                 <th style={{ padding: '12px', textAlign: 'right' }}>Kontribusi</th>
               </tr>
             </thead>
             <tbody>
               {pegawaiMenuList.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '20px' }}>Belum ada rincian penjualan menu oleh pegawai ini.</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: '20px' }}>Belum ada rincian penjualan menu oleh pegawai ini.</td></tr>
               ) : (
                 pegawaiMenuList.map((m, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '12px', fontWeight: 'bold' }}>{m.nama_menu}</td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <span className="badge badge-secondary">{m.tipe_menu}</span>
+                    <td style={{ padding: '12px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.05)', fontWeight: 'bold', fontSize: '1rem', color: '#10b981' }}>
+                      {m.total_qty} Porsi
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
-                      {m.qty} Porsi
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'right' }}>{formatCurrency(m.harga)}</td>
+                    <td style={{ padding: '12px', textAlign: 'right' }}>{formatCurrency(m.harga_jual)}</td>
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#3b82f6' }}>
                       {formatCurrency(m.total_omset)}
                     </td>
@@ -545,6 +775,96 @@ export default function AnalisisPegawaiTab() {
           </table>
         </div>
       </div>
+
+      {/* TABEL RINCIAN PENJUALAN PAKET & MENU SATUAN TERJUAL OLEH PEGAWAI */}
+      {(pegawaiPaketList.length > 0 || pegawaiSatuanLangsungList.length > 0) && (
+        <div className="card mb-20" style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', marginBottom: '25px' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '15px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+            Rincian Penjualan Paket & Menu Satuan Terjual oleh {selectedPegawai}
+          </h3>
+
+          {pegawaiPaketList.length > 0 && (
+            <div style={{ marginBottom: pegawaiSatuanLangsungList.length > 0 ? '25px' : '0' }}>
+              <h4 style={{ color: '#f59e0b', marginTop: 0, marginBottom: '12px', fontSize: '1rem' }}>
+                Penjualan Paket Combo & Komposisi Menu Satuan
+              </h4>
+              <div className="table-responsive">
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left' }}>
+                      <th style={{ padding: '12px' }}>Nama Paket</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Qty Terjual</th>
+                      <th style={{ padding: '12px' }}>Komposisi Menu Satuan</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>Total Omset Paket</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pegawaiPaketList.map((p, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{p.nama_menu}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}><strong>{p.qty_langsung} Paket</strong></td>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {Array.isArray(p.resep) && p.resep.length > 0 ? (
+                              p.resep.map((r: any, rIdx: number) => {
+                                const subMenuObj = (store.menu || []).find(m => m.id_menu === r.id_menu_satuan || m.id_menu === r.id);
+                                const subName = subMenuObj ? subMenuObj.nama_menu : (r.id_menu_satuan || r.id || 'Sub Menu');
+                                const totalQtySub = (Number(r.qty) || 1) * p.qty_langsung;
+                                return (
+                                  <span key={rIdx} style={{ background: 'rgba(236, 72, 153, 0.15)', border: '1px solid #ec4899', padding: '3px 8px', borderRadius: '12px', fontSize: '0.8rem' }}>
+                                    {subName} (x{r.qty} = {totalQtySub})
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Menu Satuan Kombinasi</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                          {formatCurrency(p.total_omset)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {pegawaiSatuanLangsungList.length > 0 && (
+            <div>
+              <h4 style={{ color: '#3b82f6', marginTop: pegawaiPaketList.length > 0 ? '10px' : 0, marginBottom: '12px', fontSize: '1rem' }}>
+                Penjualan Menu Satuan Terjual (Ala Carte)
+              </h4>
+              <div className="table-responsive">
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left' }}>
+                      <th style={{ padding: '12px' }}>Nama Menu Satuan</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Qty Terjual</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>Harga Satuan</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>Total Omset</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pegawaiSatuanLangsungList.map((m, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{m.nama_menu}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}><strong>{m.qty_langsung} Porsi</strong></td>
+                        <td style={{ padding: '12px', textAlign: 'right' }}>{formatCurrency(m.harga_jual)}</td>
+                        <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                          {formatCurrency(m.qty_langsung * m.harga_jual)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 🌾 TABEL ANALISIS BAHAN BAKU TERPAKAI OLEH PENJUALAN */}
       <div className="card mb-20" style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', marginBottom: '25px' }}>
@@ -713,6 +1033,89 @@ export default function AnalisisPegawaiTab() {
           </div>
         </div>
       )}
+
+      {/* 📊 TABEL/CARD PERBANDINGAN PENJUALAN SEMUA PEGAWAI */}
+      <div className="card mb-20" style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', marginBottom: '25px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>
+            Perbandingan Total Penjualan Per Pegawai
+          </h3>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', marginTop: '15px' }}>
+          {(() => {
+            const activeCards = allPegawaiComparisonList.filter(emp => emp.items.length > 0 && emp.totalPorsi > 0);
+            if (activeCards.length === 0) {
+              return (
+                <div style={{ color: 'var(--text-secondary)', textAlign: 'center', gridColumn: '1 / -1', padding: '20px' }}>
+                  Belum ada data penjualan pegawai pada periode ini.
+                </div>
+              );
+            }
+            return activeCards.map((emp) => {
+              const inisial = emp.nama_ic.charAt(0).toUpperCase();
+              const isSelected = emp.nama_ic === selectedPegawai;
+
+              return (
+                <div 
+                  key={emp.nama_ic} 
+                  style={{ 
+                    background: 'var(--bg-card)', 
+                    padding: '15px', 
+                    borderRadius: '12px', 
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)', 
+                    border: `1px solid ${isSelected ? '#3b82f6' : 'var(--border-color)'}`,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease-in-out'
+                  }}
+                  onClick={() => setSelectedPegawai(emp.nama_ic)}
+                  title={`Klik untuk melihat detail ${emp.nama_ic}`}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                    <div style={{ background: isSelected ? '#3b82f6' : 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', flexShrink: 0 }}>
+                      {inisial}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={emp.nama_ic}>
+                        {emp.nama_ic}
+                      </h4>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {emp.jabatan}
+                      </span>
+                    </div>
+                    <span style={{ marginLeft: 'auto', background: 'rgba(16, 185, 129, 0.2)', color: 'var(--success-color)', padding: '4px 10px', borderRadius: '6px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
+                      {emp.totalPorsi} Porsi
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '250px', overflowY: 'auto' }}>
+                    {emp.items.map((item: any) => (
+                      <div 
+                        key={item.nama_menu} 
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          padding: '6px 10px', 
+                          background: 'var(--bg-hover)', 
+                          borderRadius: '6px', 
+                          fontSize: '0.9rem',
+                          marginBottom: '5px'
+                        }}
+                      >
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={item.nama_menu}>{item.nama_menu}</span>
+                        <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: 'var(--success-color)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
+                          {item.total_qty} Porsi
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </div>
 
       {/* Loading Overlay */}
       {isLoading && (

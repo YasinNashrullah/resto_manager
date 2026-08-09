@@ -34,7 +34,7 @@ export default function DashboardTab() {
   const state = useAppStore();
   
   // Period Selector State
-  const [periodType, setPeriodType] = useState<'bulan' | 'minggu' | 'semua' | 'kustom'>('bulan');
+  const [periodType, setPeriodType] = useState<'bulan' | 'bulan_lalu' | 'minggu' | 'minggu_lalu' | 'semua' | 'kustom'>('bulan');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -89,6 +89,13 @@ export default function DashboardTab() {
       filterStart = `${cYear}-${pad(cMonth + 1)}-01`;
       const lastDay = new Date(cYear, cMonth + 1, 0).getDate();
       filterEnd = `${cYear}-${pad(cMonth + 1)}-${pad(lastDay)}`;
+    } else if (periodType === 'bulan_lalu') {
+      const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const pMonth = prevMonth.getMonth();
+      const pYear = prevMonth.getFullYear();
+      filterStart = `${pYear}-${pad(pMonth + 1)}-01`;
+      const lastDay = new Date(pYear, pMonth + 1, 0).getDate();
+      filterEnd = `${pYear}-${pad(pMonth + 1)}-${pad(lastDay)}`;
     } else if (periodType === 'minggu') {
       const d = new Date(today);
       const day = d.getDay(); // 0 = Minggu (Sunday)
@@ -98,6 +105,15 @@ export default function DashboardTab() {
       sat.setDate(sun.getDate() + 6); // Sabtu (Saturday)
       filterStart = `${sun.getFullYear()}-${pad(sun.getMonth() + 1)}-${pad(sun.getDate())}`;
       filterEnd = `${sat.getFullYear()}-${pad(sat.getMonth() + 1)}-${pad(sat.getDate())}`;
+    } else if (periodType === 'minggu_lalu') {
+      const d = new Date(today);
+      const day = d.getDay(); // 0 = Minggu (Sunday)
+      const lastSun = new Date(d);
+      lastSun.setDate(d.getDate() - day - 7); // Sunday of previous week
+      const lastSat = new Date(lastSun);
+      lastSat.setDate(lastSun.getDate() + 6); // Saturday of previous week
+      filterStart = `${lastSun.getFullYear()}-${pad(lastSun.getMonth() + 1)}-${pad(lastSun.getDate())}`;
+      filterEnd = `${lastSat.getFullYear()}-${pad(lastSat.getMonth() + 1)}-${pad(lastSat.getDate())}`;
     } else if (periodType === 'semua') {
       filterStart = '2000-01-01';
       filterEnd = '2099-12-31';
@@ -341,7 +357,7 @@ export default function DashboardTab() {
     // 5. Calculations: Beban Gaji & Komisi (100% unified with KeuanganTab)
     let totalBebanGaji = calculatePayrollForDutyList(dutyList, state.pegawai || []).totalBebanGaji;
 
-    if (periodType === 'minggu' && filterStart && filterEnd) {
+    if ((periodType === 'minggu' || periodType === 'minggu_lalu') && filterStart && filterEnd) {
       try {
         const weekKey = `${filterStart} to ${filterEnd}`;
         const { data: rpcData } = await supabase.rpc('get_financial_dashboard', { p_week_key: weekKey });
@@ -370,7 +386,8 @@ export default function DashboardTab() {
     // 6. Trend Chart (Daily or Weekly depending on period)
     const trendMap = new Map();
     dutyList.forEach(d => {
-      const key = periodType === 'minggu' ? d.tanggal : getWeekLabel(d.tanggal);
+      const isDailyView = periodType === 'minggu' || periodType === 'minggu_lalu';
+      const key = isDailyView ? d.tanggal : getWeekLabel(d.tanggal);
       if (!trendMap.has(key)) trendMap.set(key, 0);
       trendMap.set(key, trendMap.get(key) + (floorToTwo(d.total_omset) || 0));
     });
@@ -524,7 +541,10 @@ export default function DashboardTab() {
             onChange={(e) => setPeriodType(e.target.value as any)}
           >
             <option value="bulan">Bulan Ini</option>
+            <option value="bulan_lalu">Bulan Lalu</option>
             <option value="minggu">Minggu Ini</option>
+            <option value="minggu_lalu">Minggu Lalu</option>
+            <option value="semua">Semua Waktu</option>
             <option value="kustom">Kustom Tanggal</option>
           </select>
 
@@ -624,7 +644,7 @@ export default function DashboardTab() {
       <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '25px' }}>
         <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '10px' }}>
           <h3 style={{ marginTop: 0 }}>
-            Tren Penjualan Omset ({periodType === 'minggu' ? 'Harian' : 'Mingguan'})
+            Tren Penjualan Omset ({(periodType === 'minggu' || periodType === 'minggu_lalu') ? 'Harian' : 'Mingguan'})
           </h3>
           <div style={{ flex: 1, minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Line 

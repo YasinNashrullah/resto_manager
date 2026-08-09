@@ -784,36 +784,67 @@ export default function DataChefTab() {
                 {Object.keys(stokPegawai).length === 0 ? (
                   <div style={{ color: '#777', width: '100%', textAlign: 'center' }}>Tidak ada stok makanan pada pegawai saat ini.</div>
                 ) : (
-                  Object.entries(stokPegawai).map(([namaPegawai, stokMenu]) => {
-                    if (namaPegawai === "Sistem (Koreksi)") return null;
-                    const menuEntries = Object.entries(stokMenu).filter(([_, qty]) => qty !== 0);
-                    if (menuEntries.length === 0) return null;
+                  (() => {
+                    const getJabatanRank = (jabatan: string): number => {
+                      const j = (jabatan || '').toLowerCase().trim();
+                      if (j.includes('manager') || j.includes('pemilik') || j.includes('owner')) return 1;
+                      if (j.includes('head chef') || j.includes('head-chef') || j.includes('headchef')) return 2;
+                      if (j.includes('chef') || j.includes('koki') || j.includes('dapur')) return 3;
+                      if (j.includes('waiter') || j.includes('pelayan') || j.includes('pramusaji')) return 4;
+                      if (j.includes('kasir') || j.includes('cashier')) return 5;
+                      return 6;
+                    };
 
-                    return (
-                      <div key={namaPegawai} className="stat-card" style={{ margin: 0, padding: '15px', borderLeft: '4px solid var(--accent-color)' }}>
-                        <h4 style={{ marginTop: 0, marginBottom: '10px', fontSize: '1rem', color: 'var(--accent-color)', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '5px' }}>
-                          {namaPegawai}
-                        </h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {menuEntries.map(([id_menu, qty]) => {
-                            const menu = findMenu(id_menu);
-                            const namaMenu = menu ? menu.nama_menu : id_menu;
-                            const isMinus = qty < 0;
-                            const badgeBg = isMinus ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
-                            const badgeText = isMinus ? "var(--danger-color)" : "var(--success-color)";
-                            return (
-                              <div key={id_menu} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-hover)', borderRadius: '6px', fontSize: '0.95rem' }}>
-                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{namaMenu}</span>
-                                <span style={{ background: badgeBg, color: badgeText, padding: '4px 10px', borderRadius: '9999px', fontWeight: 700, fontSize: '0.85rem' }}>
-                                  {qty} Porsi
-                                </span>
-                              </div>
-                            );
-                          })}
+                    const sortedEntries = Object.entries(stokPegawai).sort(([nA], [nB]) => {
+                      const pA = store.pegawai.find(p => p.nama_ic === nA);
+                      const pB = store.pegawai.find(p => p.nama_ic === nB);
+                      const rA = getJabatanRank(pA ? pA.jabatan : '');
+                      const rB = getJabatanRank(pB ? pB.jabatan : '');
+                      if (rA !== rB) return rA - rB;
+                      return nA.localeCompare(nB, 'id', { sensitivity: 'base' });
+                    });
+
+                    return sortedEntries.map(([namaPegawai, stokMenu]) => {
+                      if (namaPegawai === "Sistem (Koreksi)") return null;
+                      const menuEntries = Object.entries(stokMenu).filter(([_, qty]) => qty !== 0);
+                      if (menuEntries.length === 0) return null;
+
+                      const pegawaiInfo = store.pegawai.find(p => p.nama_ic === namaPegawai);
+                      const jabatan = pegawaiInfo ? pegawaiInfo.jabatan : "Pegawai";
+                      const inisial = namaPegawai.charAt(0).toUpperCase();
+
+                      return (
+                        <div key={namaPegawai} style={{ background: 'var(--bg-card)', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                            <div style={{ background: 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', flexShrink: 0 }}>
+                              {inisial}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={namaPegawai}>{namaPegawai}</h4>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jabatan}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {menuEntries.map(([id_menu, qty]) => {
+                              const menu = findMenu(id_menu);
+                              const namaMenu = menu ? menu.nama_menu : id_menu;
+                              const isMinus = qty < 0;
+                              const badgeBg = isMinus ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
+                              const badgeText = isMinus ? "var(--danger-color)" : "var(--success-color)";
+                              return (
+                                <div key={id_menu} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg-hover)', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '5px' }}>
+                                  <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={namaMenu}>{namaMenu}</span>
+                                  <span style={{ background: badgeBg, color: badgeText, padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
+                                    {qty} Porsi
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    });
+                  })()
                 )}
               </div>
             </div>

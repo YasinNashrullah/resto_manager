@@ -218,7 +218,15 @@ export default function PenjualanTab() {
         <div>
           <h1 style={{ display: 'inline-block' }}>Log Transaksi Duty</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Input Laporan Duty</button>
+        <button 
+          className="btn btn-primary" 
+          onClick={() => !isWaiter && handleOpenModal()}
+          disabled={isWaiter}
+          style={{ opacity: isWaiter ? 0.5 : 1, cursor: isWaiter ? 'not-allowed' : 'pointer' }}
+          title={isWaiter ? 'Input Penjualan untuk Waiters telah dinonaktifkan' : ''}
+        >
+          + Input Laporan Duty
+        </button>
       </div>
 
       <div className="card">
@@ -304,7 +312,7 @@ export default function PenjualanTab() {
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label>Tanggal Transaksi</label>
-                <input type="date" required value={tanggal} onChange={e => setTanggal(e.target.value)} />
+                <input type="date" required value={tanggal} disabled={isWaiter} onChange={e => setTanggal(e.target.value)} />
               </div>
               <div className="form-group">
               <label>Nama Pegawai</label>
@@ -330,11 +338,11 @@ export default function PenjualanTab() {
               <div style={{ display: 'flex', gap: '15px' }}>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Waktu Mulai Shift</label>
-                  <input type="time" required className="form-control" value={waktuMulai} onChange={e => setWaktuMulai(e.target.value)} />
+                  <input type="time" required disabled={isWaiter} className="form-control" value={waktuMulai} onChange={e => setWaktuMulai(e.target.value)} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Waktu Selesai Shift</label>
-                  <input type="time" required className="form-control" value={waktuSelesai} onChange={e => setWaktuSelesai(e.target.value)} />
+                  <input type="time" required disabled={isWaiter} className="form-control" value={waktuSelesai} onChange={e => setWaktuSelesai(e.target.value)} />
                 </div>
               </div>
 
@@ -342,7 +350,7 @@ export default function PenjualanTab() {
               <div id="duty-items-container" style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '5px', marginBottom: '15px', border: '1px solid var(--border-color)', padding: '10px', borderRadius: '5px' }}>
                 {items.map((ti, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-                    <select className="form-control" required style={{ flex: 1, minWidth: 0 }} value={ti.id_menu} onChange={e => {
+                    <select className="form-control" required disabled={isWaiter} style={{ flex: 1, minWidth: 0 }} value={ti.id_menu} onChange={e => {
                       const newItems = [...items];
                       newItems[idx].id_menu = e.target.value;
                       setItems(newItems);
@@ -352,12 +360,12 @@ export default function PenjualanTab() {
                         <option key={m.id_menu} value={m.id_menu}>{m.nama_menu} ({formatCurrency(m.harga_jual)})</option>
                       ))}
                     </select>
-                    <input type="number" className="form-control" placeholder="Qty" min="1" required style={{ width: '70px', flexShrink: 0 }} value={ti.qty || ''} onChange={e => {
+                    <input type="number" className="form-control" placeholder="Qty" min="1" required disabled={isWaiter} style={{ width: '70px', flexShrink: 0 }} value={ti.qty || ''} onChange={e => {
                       const newItems = [...items];
                       newItems[idx].qty = Number(e.target.value);
                       setItems(newItems);
                     }} />
-                    <button type="button" className="btn btn-danger btn-sm" style={{ flexShrink: 0 }} onClick={() => {
+                    <button type="button" className="btn btn-danger btn-sm" disabled={isWaiter} style={{ flexShrink: 0 }} onClick={() => {
                       const newItems = [...items];
                       newItems.splice(idx, 1);
                       setItems(newItems);
@@ -365,7 +373,7 @@ export default function PenjualanTab() {
                   </div>
                 ))}
               </div>
-              <button type="button" className="btn btn-sm btn-primary" style={{ marginBottom: '15px' }} onClick={() => {
+              <button type="button" className="btn btn-sm btn-primary" disabled={isWaiter} style={{ marginBottom: '15px' }} onClick={() => {
                 setItems([...items, { id_menu: '', qty: 0 }]);
               }}>+ Tambah Item Pesanan</button>
 
@@ -374,7 +382,7 @@ export default function PenjualanTab() {
                 <input type="number" className="form-control" readOnly value={totalOmset} style={{ background: 'var(--bg-dark)', fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--success-color)' }} />
               </div>
 
-              <button type="submit" className="btn btn-primary w-100" disabled={isSubmitting}>Simpan Log Transaksi</button>
+              <button type="submit" className="btn btn-primary w-100" disabled={isSubmitting || isWaiter}>Simpan Log Transaksi</button>
             </form>
           </div>
         </div>

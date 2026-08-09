@@ -886,10 +886,11 @@ Format Template JSON:
                 if (!upsertErr) insertCount++;
               }
             } else {
-              const { error: insertErr } = await supabase.from(key).insert([payload]);
+              const targetTable = key === 'transfer_items' ? 'transfer_item' : key;
+              const { error: insertErr } = await supabase.from(targetTable).insert([payload]);
               if (insertErr) {
-                console.error(`Gagal insert ke ${key}:`, insertErr);
-                alert(`Gagal menyimpan data ke ${key}: ${insertErr.message}`);
+                console.error(`Gagal insert ke ${targetTable}:`, insertErr);
+                alert(`Gagal menyimpan data ke ${targetTable}: ${insertErr.message}`);
               } else {
                 insertCount++;
               }

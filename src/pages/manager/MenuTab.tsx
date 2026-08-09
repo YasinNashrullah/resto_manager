@@ -126,9 +126,9 @@ export default function MenuTab() {
                 <th>Nama Menu</th>
                 <th>Kategori</th>
                 <th>Harga Jual</th>
-                <th>Total Modal (HPP)</th>
-                <th>Keuntungan K. / Porsi</th>
-                <th>Komposisi (Resep)</th>
+                <th>HPP</th>
+                <th>Untung/porsi</th>
+                <th>Komposisi</th>
                 {!isWaiters && <th>Aksi</th>}
               </tr>
             </thead>

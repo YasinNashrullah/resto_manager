@@ -85,10 +85,9 @@ export default function KeuanganTab() {
   const totalGaji = totalGajiEstimasi;
   const totalHpp = stats ? safeParse(stats.total_hpp) : 0;
   const totalPembelian = stats ? safeParse(stats.total_pembelian ?? stats.total_pengeluaran) : 0;
-  const totalStaffMeal = stats ? safeParse(stats.total_staff_meal) : 0;
 
   const labaKotor = totalPendapatan - totalHpp;
-  const labaBersihAktual = totalPendapatan - totalHpp - totalGaji - totalStaffMeal - totalPembelian;
+  const labaBersihAktual = totalPendapatan - totalHpp - totalGaji - totalPembelian;
 
   return (
     <div className="tab-pane active" style={{ display: 'block' }}>
@@ -135,21 +134,17 @@ export default function KeuanganTab() {
           <h3>Beban Gaji & Komisi</h3>
           <p className="stat-value text-danger">{formatCurrency(totalGaji)}</p>
         </div>
-        <div className="stat-card">
-          <h3>Beban Benefit Staff Meal</h3>
-          <p className="stat-value text-secondary">{formatCurrency(totalStaffMeal)}</p>
-        </div>
       </div>
 
       <div className="dashboard-grid mt-20" style={{ marginTop: '20px' }}>
         <div className="stat-card" style={{ border: '2px solid var(--accent-color)' }}>
           <h3>Laba Bersih (Versi HPP)</h3>
-          <p style={{ fontSize: '0.8rem', color: '#aaa' }}>Pendapatan - Beban Gaji - HPP Penjualan - Beban Staff Meal</p>
-          <p className="stat-value text-primary">{formatCurrency(labaKotor - totalGaji - totalStaffMeal)}</p>
+          <p style={{ fontSize: '0.8rem', color: '#aaa' }}>Pendapatan - Beban Gaji - HPP Penjualan</p>
+          <p className="stat-value text-primary">{formatCurrency(labaKotor - totalGaji)}</p>
         </div>
         <div className="stat-card" style={{ border: '2px solid var(--success-color)' }}>
           <h3>Laba Bersih (Versi Cashflow Aktual)</h3>
-          <p style={{ fontSize: '0.8rem', color: '#aaa' }}>Pendapatan - Beban Gaji - Biaya Pembelian Bahan - Beban Staff Meal</p>
+          <p style={{ fontSize: '0.8rem', color: '#aaa' }}>Pendapatan - Beban Gaji - Biaya Pembelian Bahan</p>
           <p className="stat-value text-success">{formatCurrency(labaBersihAktual)}</p>
         </div>
       </div>
