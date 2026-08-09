@@ -14,7 +14,7 @@ export default function DataLoader({ children }: { children: React.ReactNode }) 
         const oneMonthAgo = d.toISOString().split('T')[0];
 
         const [
-          pegawai, bahan, menu, setoran, status_gaji, periode_ditutup, transfer_items, produksi_chef, staff_meal, duty
+          pegawai, bahan, menu, setoran, status_gaji, periode_ditutup, transfer_items, produksi_chef, duty
         ] = await Promise.all([
           supabase.from('pegawai').select('*'),
           supabase.from('bahan').select('*'),
@@ -24,7 +24,6 @@ export default function DataLoader({ children }: { children: React.ReactNode }) 
           supabase.from('periode_ditutup').select('week_key'),
           supabase.from('transfer_item').select('*').gte('tanggal', oneMonthAgo),
           supabase.from('produksi_chef').select('*').gte('tanggal', oneMonthAgo),
-          supabase.from('staff_meal').select('*').gte('tanggal', oneMonthAgo),
           supabase.from('duty').select('*').gte('tanggal', oneMonthAgo)
         ]);
 
@@ -36,7 +35,6 @@ export default function DataLoader({ children }: { children: React.ReactNode }) 
         store.setPeriodeDitutup((periode_ditutup.data || []).map(r => r.week_key));
         store.setTransferItems(transfer_items.data || []);
         store.setProduksiChef(produksi_chef.data || []);
-        store.setStaffMeal(staff_meal.data || []);
         store.setDuty(duty.data || []);
 
       } catch (e) {
