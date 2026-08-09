@@ -14,12 +14,12 @@ import MenuTab from './pages/manager/MenuTab';
 import PenjualanTab from './pages/manager/PenjualanTab';
 import SetoranTab from './pages/manager/SetoranTab';
 import KeuanganTab from './pages/manager/KeuanganTab';
-import StaffMealTab from './pages/manager/StaffMealTab';
 import KasTab from './pages/manager/KasTab';
 import LaporanTeksTab from './pages/manager/LaporanTeksTab';
 import ReviewDutyTab from './pages/manager/ReviewDutyTab';
 import AITab from './pages/manager/AITab';
 import KalkulatorTab from './pages/waiter/KalkulatorTab';
+import LaporanShiftTab from './pages/waiter/LaporanShiftTab';
 import DataLoader from './components/DataLoader';
 
 function App() {
@@ -42,26 +42,21 @@ function App() {
           <Route path="penjualan" element={<PenjualanTab />} />
           <Route path="setoran" element={<SetoranTab />} />
           <Route path="keuangan" element={<KeuanganTab />} />
-          <Route path="staff-meal" element={<StaffMealTab />} />
           <Route path="kas" element={<KasTab />} />
           <Route path="laporan-teks" element={<LaporanTeksTab />} />
           <Route path="data-chef" element={<DataChefTab />} />
           <Route path="ai" element={<AITab />} />
         </Route>
 
-        <Route path="/chef" element={<ChefDashboard />}>
-          <Route path="gudang" element={<GudangTab />} />
-          <Route path="laporan-chef" element={<LaporanChefTab />} />
-          <Route path="data-chef" element={<DataChefTab />} />
-          <Route path="setoran" element={<SetoranTab />} />
-        </Route>
+        <Route path="/chef" element={<ChefDashboard />} />
+        <Route path="/chef/*" element={<ChefDashboard />} />
 
         <Route path="/waiter" element={<WaiterDashboard />}>
           <Route path="kalkulator" element={<KalkulatorTab />} />
           <Route path="menu" element={<MenuTab />} />
           <Route path="penjualan" element={<PenjualanTab />} />
           <Route path="setoran" element={<SetoranTab />} />
-          <Route path="data-chef" element={<DataChefTab />} />
+          <Route path="laporan" element={<LaporanShiftTab />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
