@@ -37,7 +37,7 @@ export default function WaiterDashboard() {
 
       <nav className={`sidebar ${isMobileMenuOpen ? 'show-sidebar' : ''}`}>
         <div className="logo-container">
-          <h2>RestoManager (Waiters)</h2>
+          <h2>RestoManager</h2>
         </div>
         
         <ul className="nav-links">
@@ -53,16 +53,13 @@ export default function WaiterDashboard() {
           <li className={`nav-item ${activeTab === 'setoran' ? 'active' : ''}`} onClick={() => { setIsMobileMenuOpen(false); navigate('/waiter/setoran'); }}>
             <i className="fas fa-hand-holding-usd" style={{ width: '25px' }}></i> Status Setoran
           </li>
-          <li className={`nav-item ${activeTab === 'data-chef' ? 'active' : ''}`} onClick={() => { setIsMobileMenuOpen(false); navigate('/waiter/data-chef'); }}>
-            <i className="fas fa-users" style={{ width: '25px' }}></i> Data Chef
+          <li className={`nav-item ${activeTab === 'laporan' ? 'active' : ''}`} onClick={() => { setIsMobileMenuOpen(false); navigate('/waiter/laporan'); }}>
+            <i className="fas fa-file-alt" style={{ width: '25px' }}></i> Informasi User & Laporan
           </li>
         </ul>
 
         <div className="sidebar-footer">
           <p>&copy; {new Date().getFullYear()} Yasin</p>
-          <button onClick={handleLogout} className="btn btn-secondary w-100 mt-20" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-            <i className="fa-solid fa-door-open"></i> Ganti Peran
-          </button>
         </div>
       </nav>
 

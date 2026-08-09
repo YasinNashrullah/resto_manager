@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { supabase } from '../../lib/supabase';
 import './KalkulatorTab.css';
 
 interface CartItem {
@@ -12,7 +11,6 @@ interface CartItem {
 
 export default function KalkulatorTab() {
   const store = useAppStore();
-  const activeWaiter = sessionStorage.getItem('active_waiter_name') || 'Unknown Waiter';
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [uangAwal, setUangAwal] = useState<string>('');
@@ -22,31 +20,49 @@ export default function KalkulatorTab() {
   const [salesItems, setSalesItems] = useState<Record<string, { qty: number, id_menu: string }>>({});
   const [totalRevenue, setTotalRevenue] = useState(0);
 
-  // Duty State
-  const [isOnDuty, setIsOnDuty] = useState(false);
-  const [dutyStartTime, setDutyStartTime] = useState<string | null>(null);
-
   const menuSatuan = store.menu.filter(m => m.tipe_menu === 'Satuan' || m.tipe_menu === 'Satuan (Ala Carte)');
   const menuPaket = store.menu.filter(m => m.tipe_menu === 'Paket');
 
+  const checkAutoReset = () => {
+    const offDutyTime = localStorage.getItem('kalku_offDutyTimestamp');
+    const isCurrentlyOnDuty = !!localStorage.getItem('kalku_dutyStart');
+    if (offDutyTime && !isCurrentlyOnDuty) {
+      const elapsed = Date.now() - Number(offDutyTime);
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      if (elapsed >= ONE_HOUR_MS) {
+        localStorage.removeItem('kalku_salesData');
+        localStorage.removeItem('kalku_uangAwal');
+        localStorage.removeItem('kalku_lastDuty');
+        localStorage.removeItem('kalku_savedLaporanPenjualan');
+        localStorage.removeItem('kalku_savedLaporanDuty');
+        localStorage.removeItem('kalku_offDutyTimestamp');
+
+        setSalesItems({});
+        setTotalRevenue(0);
+        setUangAwal('');
+        setUangAkhir('');
+        setCart([]);
+        return true;
+      }
+    }
+    return false;
+  };
+
   useEffect(() => {
-    // Restore from localStorage if exists to persist across refreshes
-    const savedDuty = localStorage.getItem('kalku_dutyStart');
-    if (savedDuty) {
-      setIsOnDuty(true);
-      setDutyStartTime(savedDuty);
-    }
-    const savedSales = localStorage.getItem('kalku_salesData');
-    if (savedSales) {
-      try {
-        const parsed = JSON.parse(savedSales);
-        setSalesItems(parsed.items || {});
-        setTotalRevenue(parsed.revenue || 0);
-      } catch (e) {}
-    }
-    const savedUangAwal = localStorage.getItem('kalku_uangAwal');
-    if (savedUangAwal) {
-      setUangAwal(savedUangAwal);
+    const wasReset = checkAutoReset();
+    if (!wasReset) {
+      const savedSales = localStorage.getItem('kalku_salesData');
+      if (savedSales) {
+        try {
+          const parsed = JSON.parse(savedSales);
+          setSalesItems(parsed.items || {});
+          setTotalRevenue(parsed.revenue || 0);
+        } catch (e) {}
+      }
+      const savedUangAwal = localStorage.getItem('kalku_uangAwal');
+      if (savedUangAwal) {
+        setUangAwal(savedUangAwal);
+      }
     }
   }, []);
 
@@ -54,56 +70,10 @@ export default function KalkulatorTab() {
     localStorage.setItem('kalku_salesData', JSON.stringify({ items, revenue: rev }));
   };
 
-  const handleOnDuty = () => {
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setDutyStartTime(timeStr);
-    setIsOnDuty(true);
-    localStorage.setItem('kalku_dutyStart', timeStr);
-  };
-
-  const handleOffDuty = async () => {
-    if (!dutyStartTime) return;
-
-    const now = new Date();
-    const dutyEndTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    
-    // Prepare detail_jual payload
-    const detailJualItems = Object.keys(salesItems).map(name => ({
-        id_menu: salesItems[name].id_menu,
-        qty: salesItems[name].qty
-    }));
-
-    const payload = {
-        nama_pegawai: activeWaiter,
-        waktu_mulai: dutyStartTime,
-        waktu_selesai: dutyEndTime,
-        detail_jual: detailJualItems,
-        total_omset: totalRevenue,
-        status: 'pending'
-    };
-
-    try {
-        const { error } = await supabase.from('duty_draft').insert([payload]);
-        if (error) throw error;
-        
-        // Reset everything
-        setIsOnDuty(false);
-        setDutyStartTime(null);
-        setSalesItems({});
-        setTotalRevenue(0);
-        setCart([]);
-        localStorage.removeItem('kalku_dutyStart');
-        localStorage.removeItem('kalku_salesData');
-
-    } catch (err: any) {
-        alert('Gagal mengirim laporan duty: ' + err.message);
-    }
-  };
-
   const addToCart = (menu: any) => {
-    if (!isOnDuty) {
-      alert('Anda belum On Duty! Silakan klik tombol On Duty di bawah.');
+    const isDutyActive = !!localStorage.getItem('kalku_dutyStart');
+    if (!isDutyActive) {
+      alert('Anda belum On Duty! Silakan klik On Duty di menu Informasi User & Laporan terlebih dahulu.');
       return;
     }
     setCart(prev => {
@@ -217,42 +187,6 @@ export default function KalkulatorTab() {
                 ))}
               </div>
             </div>
-            
-            {/* Duty Section placed below menus on desktop */}
-            <div className="duty-section">
-                <h3>Informasi Shift / Duty</h3>
-                <div className="form-group" style={{ marginBottom: '5px' }}>
-                    <label>Nama Pegawai Aktif:</label>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#fff' }}>{activeWaiter}</div>
-                </div>
-                {dutyStartTime && (
-                    <div className="hint" style={{ color: '#10b981', marginTop: '10px' }}>
-                        Sedang On Duty (Mulai: {dutyStartTime})
-                    </div>
-                )}
-                {!dutyStartTime && (
-                    <div className="hint" style={{ color: '#ef4444', marginTop: '10px' }}>
-                        Belum On Duty. Silakan mulai sebelum melayani pelanggan.
-                    </div>
-                )}
-
-                <div className="duty-actions">
-                    <button 
-                        className="btn btn-success-calc" 
-                        onClick={handleOnDuty}
-                        disabled={isOnDuty}
-                    >
-                        On Duty
-                    </button>
-                    <button 
-                        className="btn btn-danger-calc" 
-                        onClick={handleOffDuty}
-                        disabled={!isOnDuty}
-                    >
-                        Off Duty
-                    </button>
-                </div>
-            </div>
           </div>
 
           {/* Keranjang & Pembayaran */}
@@ -325,7 +259,7 @@ export default function KalkulatorTab() {
               <button 
                 className="btn btn-primary-calc" 
                 onClick={handleSelesaikanPesanan}
-                disabled={currentTotal === 0 || !isOnDuty}
+                disabled={currentTotal === 0 || !localStorage.getItem('kalku_dutyStart')}
               >
                 Selesaikan Pesanan
               </button>
