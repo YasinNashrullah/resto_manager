@@ -83,7 +83,6 @@ export default function ManagerLayout() {
     { path: '/manager/laporan-chef', label: 'Laporan Chef' },
     { path: '/manager/data-chef', label: 'Data Chef' },
     { path: '/manager/keuangan', label: 'Laporan Mingguan (Gaji)' },
-    { path: '/manager/staff-meal', label: 'Konsumsi Pegawai' },
     { path: '/manager/kas', label: 'Kas Restoran' },
     { path: '/manager/laporan-teks', label: 'Laporan Teks' },
     { path: '/manager/ai', label: 'AI Bulk Input', icon: 'fa-solid fa-robot', highlight: true },
