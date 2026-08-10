@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
+import { supabase } from '../../lib/supabase';
 
 export default function LaporanShiftTab() {
   const store = useAppStore();
@@ -136,15 +137,51 @@ export default function LaporanShiftTab() {
     localStorage.removeItem('kalku_offDutyTimestamp');
   };
 
-  const handleOffDuty = () => {
+  const handleOffDuty = async () => {
     if (!dutyStartTime) return;
     const now = new Date();
     const endTimeStr = `${now.getHours().toString().padStart(2, '0')}.${now.getMinutes().toString().padStart(2, '0')}`;
 
     generateLaporanDuty(dutyStartTime, endTimeStr);
+    generateLaporanPenjualan();
+
     localStorage.setItem('kalku_lastDuty', JSON.stringify({ start: dutyStartTime, end: endTimeStr }));
-    // Record timestamp for 1-hour auto reset after Off Duty
     localStorage.setItem('kalku_offDutyTimestamp', Date.now().toString());
+
+    // Kirim draft otomatis ke Supabase duty_draft agar muncul di Review Duty (Draft) Manager
+    try {
+      const savedSales = localStorage.getItem('kalku_salesData');
+      let itemsPayload: any[] = [];
+      let revenuePayload = 0;
+
+      if (savedSales) {
+        try {
+          const parsed = JSON.parse(savedSales);
+          revenuePayload = parsed.revenue || 0;
+          const itemsObj = parsed.items || {};
+          itemsPayload = Object.values(itemsObj).map((item: any) => ({
+            id_menu: item.id_menu,
+            qty: Number(item.qty) || 0
+          }));
+        } catch (e) {}
+      }
+
+      const draftPayload = {
+        nama_pegawai: namaPegawai.trim() || 'Waiters',
+        waktu_mulai: dutyStartTime,
+        waktu_selesai: endTimeStr,
+        total_omset: revenuePayload,
+        detail_jual: itemsPayload,
+        status: 'pending'
+      };
+
+      const { error } = await supabase.from('duty_draft').insert([draftPayload]);
+      if (error) {
+        console.error('Gagal membuat duty_draft:', error);
+      }
+    } catch (err) {
+      console.error('Error saat menyimpan duty_draft:', err);
+    }
 
     setDutyStartTime(null);
     setIsOnDuty(false);
