@@ -2,9 +2,25 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, getJakartaDate, getWeekRange } from '../../lib/utils';
 import { useAppStore } from '../../store/useAppStore';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function KasTab() {
   const store = useAppStore();
+  
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -98,11 +114,36 @@ export default function KasTab() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Hapus riwayat kas tambahan ini?")) {
-      await supabase.from('kas_tambahan').delete().eq('id_kas', id);
-      fetchData();
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Kas Tambahan',
+      message: 'Yakin ingin menghapus catatan kas tambahan ini?',
+      onConfirm: () => executeDelete(id)
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      // Optimistic local update
+      setKasList(prev => prev.filter(d => d.id_kas !== id));
+      
+      const { error } = await supabase.from('kas_tambahan').delete().eq('id_kas', id);
+      if (error) {
+        console.error("Gagal menghapus kas tambahan:", error);
+        alert("Gagal menghapus kas tambahan: " + error.message);
+      }
+      
+      await store.fetchData();
+      await fetchData();
       calculateGlobalCashflow();
+    } catch (err: any) {
+      console.error("Error menghapus kas tambahan:", err);
+      alert("Error menghapus kas tambahan: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -229,6 +270,17 @@ export default function KasTab() {
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
     </div>
   );
 }

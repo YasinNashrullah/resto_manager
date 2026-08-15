@@ -471,10 +471,17 @@ export default function AnalisisPegawaiTab() {
 
       // 6. Calculate All Staff Comparison Grid (Sorted Alphabetically by Employee Name)
       const pegawaiCompMap: Record<string, Record<string, { total_qty: number, harga_jual: number, total_omset: number }>> = {};
+      const pegawaiDutyMap: Record<string, { dutyCount: number, totalJam: number }> = {};
 
       allDutiesList.forEach((d: any) => {
         const empName = d.nama_ic;
         if (!empName) return;
+
+        if (!pegawaiDutyMap[empName]) {
+          pegawaiDutyMap[empName] = { dutyCount: 0, totalJam: 0 };
+        }
+        pegawaiDutyMap[empName].dutyCount += 1;
+        pegawaiDutyMap[empName].totalJam += getDutyHours(d);
 
         if (!pegawaiCompMap[empName]) {
           pegawaiCompMap[empName] = {};
@@ -534,6 +541,7 @@ export default function AnalisisPegawaiTab() {
 
         const totalPorsiEmp = items.reduce((acc, it) => acc + it.total_qty, 0);
         const totalOmsetEmp = items.reduce((acc, it) => acc + it.total_omset, 0);
+        const dutyStats = pegawaiDutyMap[empName] || { dutyCount: 0, totalJam: 0 };
 
         const empObj = (store.pegawai || []).find(p => p.nama_ic === empName);
 
@@ -542,7 +550,9 @@ export default function AnalisisPegawaiTab() {
           jabatan: empObj ? empObj.jabatan : 'Pegawai',
           items,
           totalPorsi: totalPorsiEmp,
-          totalOmset: totalOmsetEmp
+          totalOmset: totalOmsetEmp,
+          totalDutyCount: dutyStats.dutyCount,
+          totalDutyJam: floorToTwo(dutyStats.totalJam)
         };
       });
 
@@ -1072,20 +1082,27 @@ export default function AnalisisPegawaiTab() {
                   title={`Klik untuk melihat detail ${emp.nama_ic}`}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                    <div style={{ background: isSelected ? '#3b82f6' : 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', flexShrink: 0 }}>
+                    <div style={{ background: isSelected ? '#3b82f6' : 'var(--accent-color)', color: 'white', width: '38px', height: '38px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', flexShrink: 0 }}>
                       {inisial}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={emp.nama_ic}>
                         {emp.nama_ic}
                       </h4>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {emp.jabatan}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {emp.jabatan}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          <i className="fa-regular fa-clock" style={{ marginRight: '4px' }}></i>{emp.totalDutyCount}x Duty ({emp.totalDutyJam}j)
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0, marginLeft: '6px' }}>
+                      <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: 'var(--success-color)', padding: '4px 10px', borderRadius: '6px', fontWeight: 600, fontSize: '0.85rem' }}>
+                        {emp.totalPorsi} Porsi
                       </span>
                     </div>
-                    <span style={{ marginLeft: 'auto', background: 'rgba(16, 185, 129, 0.2)', color: 'var(--success-color)', padding: '4px 10px', borderRadius: '6px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
-                      {emp.totalPorsi} Porsi
-                    </span>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '250px', overflowY: 'auto' }}>
@@ -1099,8 +1116,8 @@ export default function AnalisisPegawaiTab() {
                           padding: '6px 10px', 
                           background: 'var(--bg-hover)', 
                           borderRadius: '6px', 
-                          fontSize: '0.9rem',
-                          marginBottom: '5px'
+                          fontSize: '0.9rem', 
+                          marginBottom: '5px' 
                         }}
                       >
                         <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={item.nama_menu}>{item.nama_menu}</span>
@@ -1120,7 +1137,7 @@ export default function AnalisisPegawaiTab() {
       {/* Loading Overlay */}
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '20px', color: 'var(--accent-color)' }}>
-          🔄 Memuat analisis data pegawai...
+          <i className="fa-solid fa-rotate fa-spin" style={{ marginRight: '8px' }}></i>Memuat analisis data pegawai...
         </div>
       )}
 

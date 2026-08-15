@@ -2,9 +2,25 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, getJakartaDate, getWeekRange } from '../../lib/utils';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function GudangTab() {
   const store = useAppStore();
+  
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [bahanList, setBahanList] = useState<any[]>([]);
   const [globalStok, setGlobalStok] = useState<Record<string, number>>({});
   
@@ -124,11 +140,31 @@ export default function GudangTab() {
     }
   };
 
-  const handleDeleteBahan = async (id: string) => {
-    if (confirm("Yakin ingin menghapus bahan ini? Pastikan tidak dipakai di menu!")) {
-      await supabase.from('bahan').delete().eq('id_bahan', id);
-      const { data } = await supabase.from('bahan').select('*');
-      if (data) store.setBahan(data);
+  const handleDeleteBahan = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Master Bahan',
+      message: 'Yakin ingin menghapus bahan ini? Pastikan bahan ini tidak dipakai di menu aktif!',
+      onConfirm: () => executeDeleteBahan(id)
+    });
+  };
+
+  const executeDeleteBahan = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      const { error } = await supabase.from('bahan').delete().eq('id_bahan', id);
+      if (error) {
+        console.error("Gagal menghapus bahan:", error);
+        alert("Gagal menghapus bahan: " + error.message);
+      }
+      await store.fetchData();
+      fetchStok();
+    } catch (err: any) {
+      console.error("Error menghapus bahan:", err);
+      alert("Error menghapus bahan: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -190,11 +226,36 @@ export default function GudangTab() {
     }
   };
 
-  const handleDeleteRestock = async (id: string) => {
-    if (confirm("Yakin ingin menghapus riwayat ini? Stok yang sudah bertambah tidak otomatis terhapus (butuh koreksi stok manual).")) {
-      await supabase.from('pengeluaran').delete().eq('id_pengeluaran', id);
-      fetchRestock();
-      fetchStok();
+  const handleDeleteRestock = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Riwayat Restock',
+      message: 'Yakin ingin menghapus riwayat pembelian restock ini? Stok yang sudah bertambah tidak otomatis terhapus.',
+      onConfirm: () => executeDeleteRestock(id)
+    });
+  };
+
+  const executeDeleteRestock = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      // Optimistic local update
+      setRestockList(prev => prev.filter(d => d.id_pengeluaran !== id));
+      
+      const { error } = await supabase.from('pengeluaran').delete().eq('id_pengeluaran', id);
+      if (error) {
+        console.error("Gagal menghapus riwayat restock:", error);
+        alert("Gagal menghapus riwayat restock: " + error.message);
+      }
+      
+      await store.fetchData();
+      await fetchRestock();
+      await fetchStok();
+    } catch (err: any) {
+      console.error("Error menghapus riwayat restock:", err);
+      alert("Error menghapus riwayat restock: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -502,6 +563,16 @@ export default function GudangTab() {
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
     </div>
   );

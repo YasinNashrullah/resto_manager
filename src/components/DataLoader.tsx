@@ -9,34 +9,7 @@ export default function DataLoader({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     async function refreshState() {
       try {
-        const d = new Date();
-        d.setMonth(d.getMonth() - 1);
-        const oneMonthAgo = d.toISOString().split('T')[0];
-
-        const [
-          pegawai, bahan, menu, setoran, status_gaji, periode_ditutup, transfer_items, produksi_chef, duty
-        ] = await Promise.all([
-          supabase.from('pegawai').select('*'),
-          supabase.from('bahan').select('*'),
-          supabase.from('menu').select('*'),
-          supabase.from('setoran').select('*').gte('tanggal_update', oneMonthAgo),
-          supabase.from('status_gaji').select('*').gte('tanggal_update', oneMonthAgo),
-          supabase.from('periode_ditutup').select('week_key'),
-          supabase.from('transfer_item').select('*').gte('tanggal', oneMonthAgo),
-          supabase.from('produksi_chef').select('*').gte('tanggal', oneMonthAgo),
-          supabase.from('duty').select('*').gte('tanggal', oneMonthAgo)
-        ]);
-
-        store.setPegawai(pegawai.data || []);
-        store.setBahan(bahan.data || []);
-        store.setMenu(menu.data || []);
-        store.setSetoran(setoran.data || []);
-        store.setStatusGaji(status_gaji.data || []);
-        store.setPeriodeDitutup((periode_ditutup.data || []).map(r => r.week_key));
-        store.setTransferItems(transfer_items.data || []);
-        store.setProduksiChef(produksi_chef.data || []);
-        store.setDuty(duty.data || []);
-
+        await store.fetchData();
       } catch (e) {
         console.error("Supabase Fetch Error:", e);
         alert('Gagal mengambil data dari Supabase. Cek koneksi internet Anda.');

@@ -749,6 +749,7 @@ Format Template JSON:
           else if (!masterChefMatch) errs.push(`[Produksi Chef] Chef "${p.nama_ic_chef}" tidak ditemukan.`);
           else {
             payloads.produksi_chef.push({
+              id_produksi: `P_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
               tanggal: p.tanggal,
               id_menu: masterMenuMatch.id_menu,
               qty: Math.abs(floorToTwo(p.qty)) || 0,

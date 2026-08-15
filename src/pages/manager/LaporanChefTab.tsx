@@ -2,16 +2,31 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
 import { getJakartaDate, getWeekRange } from '../../lib/utils';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function LaporanChefTab() {
   const store = useAppStore();
   
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
   const [tanggal, setTanggal] = useState('');
-  const [namaChef, setNamaChef] = useState('');
+  const [chefList, setChefList] = useState<string[]>([]);
   const [items, setItems] = useState<{ id_menu: string, qty: number | string }[]>([]);
 
   // Filter & Pagination State
@@ -45,7 +60,7 @@ export default function LaporanChefTab() {
   async function fetchData() {
     let query = supabase.from('produksi_chef')
       .select('*')
-      .order('id_produksi', { ascending: false });
+      .order('tanggal', { ascending: false });
 
     if (selectedWeek && selectedWeek !== 'all' && selectedWeek.includes(' to ')) {
       const parts = selectedWeek.split(' to ');
@@ -57,8 +72,60 @@ export default function LaporanChefTab() {
     }
     
     const { data } = await query;
-    if (data) setProduksiList(data);
+    if (data) {
+      const sorted = [...data].sort((a, b) => {
+        const dateA = a.tanggal || '';
+        const dateB = b.tanggal || '';
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA);
+        }
+        const getTime = (item: any) => {
+          if (item.timestamp) return new Date(item.timestamp).getTime();
+          if (item.id_produksi && item.id_produksi.startsWith('P_')) {
+            const ts = Number(item.id_produksi.split('_')[1]);
+            if (!isNaN(ts)) return ts;
+          }
+          return 0;
+        };
+        const timeA = getTime(a);
+        const timeB = getTime(b);
+        if (timeA && timeB) {
+          return timeB - timeA;
+        }
+        return (b.id_produksi || '').localeCompare(a.id_produksi || '');
+      });
+      setProduksiList(sorted);
+    }
   }
+
+  const handleAddChef = (name: string) => {
+    if (name && !chefList.includes(name)) {
+      setChefList([...chefList, name]);
+    }
+  };
+
+  const handleRemoveChef = (name: string) => {
+    setChefList(chefList.filter(n => n !== name));
+  };
+
+  const handleSelectAllChefs = () => {
+    const chefs = store.pegawai
+      .filter(p => p.status_kontrak === 'Aktif' && (p.jabatan?.toLowerCase().includes('chef') || p.jabatan?.toLowerCase().includes('cook') || p.jabatan?.toLowerCase().includes('dapur') || p.jabatan?.toLowerCase().includes('koki')))
+      .map(p => p.nama_ic);
+    const combined = Array.from(new Set([...chefList, ...chefs]));
+    setChefList(combined);
+  };
+
+  const handleSelectAllActive = () => {
+    const all = store.pegawai
+      .filter(p => p.status_kontrak === 'Aktif')
+      .map(p => p.nama_ic);
+    setChefList(all);
+  };
+
+  const handleClearChefs = () => {
+    setChefList([]);
+  };
 
   const handleAutoLoadAllMakanan = () => {
     const allSatuan = store.menu.filter(m => m.tipe_menu === 'Satuan').map(m => ({
@@ -69,8 +136,8 @@ export default function LaporanChefTab() {
   };
 
   const handleAutoLoadCookableFromBahan = async () => {
-    if (!namaChef) {
-      alert("Silakan pilih Dimasak Oleh (Chef) terlebih dahulu.");
+    if (chefList.length === 0) {
+      alert("Silakan pilih minimal 1 Chef terlebih dahulu.");
       return;
     }
 
@@ -82,7 +149,7 @@ export default function LaporanChefTab() {
         const { data } = await supabase.rpc('get_stock_bahan_pegawai');
         if (Array.isArray(data) && data.length > 0) {
           data.forEach((s: any) => {
-            if (s.nama_ic === namaChef) {
+            if (chefList.includes(s.nama_ic)) {
               const bId = s.id_bahan;
               const qty = parseFloat(s.qty) || 0;
               chefBahanStok[bId] = (chefBahanStok[bId] || 0) + qty;
@@ -94,19 +161,21 @@ export default function LaporanChefTab() {
       }
 
       if (Object.keys(chefBahanStok).length === 0) {
-        const { data: transfers } = await supabase.from('transfer_item').select('*').eq('tipe_item', 'Bahan').eq('ke_ic', namaChef);
-        (transfers || []).forEach((t: any) => {
-          const bId = t.id_item;
-          const qty = parseFloat(t.qty) || 0;
-          chefBahanStok[bId] = (chefBahanStok[bId] || 0) + qty;
-        });
+        for (const chefName of chefList) {
+          const { data: transfers } = await supabase.from('transfer_item').select('*').eq('tipe_item', 'Bahan').eq('ke_ic', chefName);
+          (transfers || []).forEach((t: any) => {
+            const bId = t.id_item;
+            const qty = parseFloat(t.qty) || 0;
+            chefBahanStok[bId] = (chefBahanStok[bId] || 0) + qty;
+          });
 
-        const { data: pengeluaran } = await supabase.from('pengeluaran').select('*').eq('nama_pembeli', namaChef);
-        (pengeluaran || []).forEach((p: any) => {
-          const bId = p.id_bahan;
-          const qty = parseFloat(p.jumlah_unit || p.qty) || 0;
-          chefBahanStok[bId] = (chefBahanStok[bId] || 0) + qty;
-        });
+          const { data: pengeluaran } = await supabase.from('pengeluaran').select('*').eq('nama_pembeli', chefName);
+          (pengeluaran || []).forEach((p: any) => {
+            const bId = p.id_bahan;
+            const qty = parseFloat(p.jumlah_unit || p.qty) || 0;
+            chefBahanStok[bId] = (chefBahanStok[bId] || 0) + qty;
+          });
+        }
       }
 
       const getBahanQty = (bIdOrName: string) => {
@@ -161,7 +230,7 @@ export default function LaporanChefTab() {
       setItems(autoItems);
 
       const totalAutoPorsi = autoItems.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
-      alert(`Berhasil menghitung stok bahan milik Chef "${namaChef}"!\n` +
+      alert(`Berhasil menghitung stok bahan milik ${chefList.length} Chef terpilih (${chefList.join(', ')})!\n` +
             `Total masakan yang otomatis terisi porsinya: ${totalAutoPorsi} porsi.`);
     } catch (err: any) {
       alert("Error menghitung porsi: " + err.message);
@@ -172,8 +241,8 @@ export default function LaporanChefTab() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!namaChef) {
-      alert("Silakan pilih Dimasak Oleh (Chef).");
+    if (chefList.length === 0) {
+      alert("Silakan pilih minimal 1 Chef yang memasak.");
       return;
     }
 
@@ -186,18 +255,30 @@ export default function LaporanChefTab() {
 
     setIsSubmitting(true);
     try {
-      const payloads = validItems.map(item => ({
-        tanggal,
-        nama_ic_chef: namaChef,
-        id_menu: item.id_menu,
-        qty: parseFloat(String(item.qty)) || 0
-      }));
+      const payloads: any[] = [];
+      const now = Date.now();
+      let idx = 0;
+      for (const chef of chefList) {
+        for (const item of validItems) {
+          payloads.push({
+            id_produksi: `P_${now + idx}_${Math.floor(Math.random() * 1000)}`,
+            tanggal,
+            nama_ic_chef: chef,
+            id_menu: item.id_menu,
+            qty: parseFloat(String(item.qty)) || 0
+          });
+          idx++;
+        }
+      }
 
-      await supabase.from('produksi_chef').insert(payloads);
-      alert(`Berhasil menyimpan ${payloads.length} masakan chef!`);
+      const { error } = await supabase.from('produksi_chef').insert(payloads);
+      if (error) throw error;
+
+      alert(`Berhasil menyimpan ${validItems.length} masakan untuk ${chefList.length} chef (${payloads.length} total data produksi)!`);
       
       setModalOpen(false);
       setItems([]);
+      setChefList([]);
       fetchData();
     } catch (error: any) {
       alert("Error: " + error.message);
@@ -206,10 +287,35 @@ export default function LaporanChefTab() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Yakin ingin menghapus laporan masakan ini? Stok makanan akan otomatis berkurang.")) {
-      await supabase.from('produksi_chef').delete().eq('id_produksi', id);
-      fetchData();
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Laporan Masakan',
+      message: 'Yakin ingin menghapus laporan masakan ini? Stok makanan akan otomatis berkurang.',
+      onConfirm: () => executeDelete(id)
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      // Optimistic local update
+      setProduksiList(prev => prev.filter(item => item.id_produksi !== id));
+      
+      const { error } = await supabase.from('produksi_chef').delete().eq('id_produksi', id);
+      if (error) {
+        console.error("Gagal menghapus laporan masak:", error);
+        alert("Gagal menghapus laporan masak: " + error.message);
+      }
+      
+      await store.fetchData();
+      await fetchData();
+    } catch (err: any) {
+      console.error("Error menghapus laporan:", err);
+      alert("Error menghapus laporan: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -221,7 +327,7 @@ export default function LaporanChefTab() {
         </div>
         <button className="btn btn-primary" style={{ fontWeight: 'bold' }} onClick={() => {
           setTanggal(getJakartaDate());
-          setNamaChef('');
+          setChefList([]);
           setItems([]);
           setModalOpen(true);
         }}>+ Input Laporan Masakan</button>
@@ -251,7 +357,7 @@ export default function LaporanChefTab() {
           <table id="table-produksi-chef">
             <thead>
               <tr>
-                <th>Tanggal</th>
+                <th>Tanggal & Waktu</th>
                 <th>Menu (Satuan)</th>
                 <th>Jumlah (Porsi)</th>
                 <th>Chef</th>
@@ -267,9 +373,27 @@ export default function LaporanChefTab() {
                 const wr = getWeekRange(d.tanggal);
                 const isClosed = wr ? store.periode_ditutup.includes(wr.key) : false;
                 
+                let timeStr = '';
+                if (d.timestamp) {
+                  timeStr = new Date(d.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                } else if (d.id_produksi && typeof d.id_produksi === 'string' && d.id_produksi.startsWith('P_')) {
+                  const parts = d.id_produksi.split('_');
+                  const ts = Number(parts[1]);
+                  if (!isNaN(ts) && ts > 1000000000000) {
+                    timeStr = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  }
+                }
+
                 return (
                   <tr key={d.id_produksi}>
-                    <td>{d.tanggal}</td>
+                    <td>
+                      <div style={{ fontWeight: '500' }}>{d.tanggal}</div>
+                      {timeStr ? (
+                        <small style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block' }}>
+                          <i className="fa-regular fa-clock" style={{ marginRight: '4px' }}></i>{timeStr}
+                        </small>
+                      ) : null}
+                    </td>
                     <td className="font-weight-bold">{namaMenu}</td>
                     <td className="text-success font-weight-bold">+{d.qty} Porsi</td>
                     <td>{d.nama_ic_chef}</td>
@@ -292,23 +416,139 @@ export default function LaporanChefTab() {
       {/* Modal Laporan Masakan */}
       {modalOpen && (
         <div className="modal" style={{ display: 'flex' }}>
-          <div className="modal-content" style={{ maxWidth: '680px', width: '90%' }}>
+          <div className="modal-content" style={{ maxWidth: '680px', width: '95%' }}>
             <span className="close-btn" onClick={() => setModalOpen(false)}>&times;</span>
-            <h2 style={{ marginTop: 0 }}>Input Laporan Produksi Masakan Chef</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Input Laporan Produksi Masakan Chef</h2>
             <form onSubmit={handleSave}>
-              <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label style={{ fontWeight: 'bold' }}>Tanggal Masak</label>
-                  <input type="date" className="form-control" required value={tanggal} onChange={e => setTanggal(e.target.value)} />
+              
+              {/* Row 1: Tanggal Masak */}
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <label style={{ fontWeight: 'bold' }}>Tanggal Masak</label>
+                <input type="date" className="form-control" required value={tanggal} onChange={e => setTanggal(e.target.value)} />
+              </div>
+
+              {/* Row 2: Dimasak Oleh (Multi-Chef) */}
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontWeight: 'bold', margin: 0 }}>
+                    Dimasak Oleh (Chef) <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>(Bisa pilih 2 atau lebih chef)</span>
+                  </label>
+                  <span style={{ 
+                    fontSize: '0.8rem', 
+                    padding: '2px 8px', 
+                    borderRadius: '10px', 
+                    background: chefList.length > 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    color: chefList.length > 0 ? 'var(--success-color)' : 'var(--text-secondary)',
+                    fontWeight: 'bold'
+                  }}>
+                    {chefList.length} Chef Terpilih
+                  </span>
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label style={{ fontWeight: 'bold' }}>Dimasak Oleh (Chef)</label>
-                  <select className="form-control" required value={namaChef} onChange={e => setNamaChef(e.target.value)}>
-                    <option value="">-- Dimasak Oleh --</option>
-                    {store.pegawai.filter(p => p.status_kontrak === 'Aktif').map(p => (
+
+                {/* Quick select buttons */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm" 
+                    style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleSelectAllChefs}
+                  >
+                    + Semua Chef
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm" 
+                    style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleSelectAllActive}
+                  >
+                    + Pilih Semua
+                  </button>
+                  {chefList.length > 0 && (
+                    <button 
+                      type="button" 
+                      className="btn btn-sm" 
+                      style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      onClick={handleClearChefs}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown to add single chef */}
+                <select 
+                  className="form-control" 
+                  style={{ width: '100%', marginBottom: '8px' }} 
+                  value="" 
+                  onChange={e => {
+                    handleAddChef(e.target.value);
+                  }}
+                >
+                  <option value="">+ Tambah Chef (Klik untuk memilih)...</option>
+                  {store.pegawai
+                    .filter(p => p.status_kontrak === 'Aktif' && !chefList.includes(p.nama_ic))
+                    .map(p => (
                       <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} ({p.jabatan})</option>
-                    ))}
-                  </select>
+                    ))
+                  }
+                </select>
+
+                {/* Selected Chefs Badges Container */}
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  gap: '6px', 
+                  minHeight: '40px', 
+                  padding: '8px', 
+                  background: 'var(--bg-dark)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '6px' 
+                }}>
+                  {chefList.length === 0 ? (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', alignSelf: 'center', fontStyle: 'italic' }}>
+                      Belum ada Chef dipilih. Gunakan tombol "+ Semua Chef" atau pilih dari dropdown.
+                    </span>
+                  ) : (
+                    chefList.map(name => {
+                      const emp = store.pegawai.find(p => p.nama_ic === name);
+                      return (
+                        <span 
+                          key={name} 
+                          style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: '6px', 
+                            background: '#2d3748', 
+                            color: '#edf2f7', 
+                            border: '1px solid #4a5568', 
+                            borderRadius: '16px', 
+                            padding: '3px 10px', 
+                            fontSize: '0.82rem' 
+                          }}
+                        >
+                          <span>👨‍🍳 {name} {emp ? <small style={{ opacity: 0.75 }}>({emp.jabatan})</small> : ''}</span>
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveChef(name)} 
+                            style={{ 
+                              background: 'transparent', 
+                              border: 'none', 
+                              color: '#fc8181', 
+                              cursor: 'pointer', 
+                              fontWeight: 'bold', 
+                              fontSize: '1rem', 
+                              lineHeight: 1, 
+                              padding: 0,
+                              marginLeft: '2px'
+                            }}
+                            title="Hapus chef ini"
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -328,7 +568,7 @@ export default function LaporanChefTab() {
               <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '15px' }}>
                 {items.length === 0 ? (
                   <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
-                    Pilih Chef lalu klik <strong>"🔥 Masak Maksimal dari Stok Bahan Chef"</strong> di atas.
+                    Belum ada item ditambahkan. Klik <strong>"+ Tambah Item Masakan"</strong> atau <strong>"⚡ Muat Semua Makanan"</strong> di atas.
                   </div>
                 ) : (
                   items.map((ti, idx) => (
@@ -367,7 +607,7 @@ export default function LaporanChefTab() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
                 <button type="button" className="btn btn-sm btn-primary" onClick={() => {
                   setItems([...items, { id_menu: '', qty: 0 }]);
                 }}>
@@ -375,13 +615,51 @@ export default function LaporanChefTab() {
                 </button>
               </div>
 
-              <button type="submit" className="btn btn-primary w-100" style={{ padding: '12px', fontWeight: 'bold' }} disabled={isSubmitting}>
-                {isSubmitting ? 'Menyimpan Laporan...' : 'Simpan Laporan Chef'}
+              {/* Duplicate Summary Card */}
+              {chefList.length > 0 && items.filter(i => i.id_menu && (parseFloat(String(i.qty)) || 0) > 0).length > 0 && (
+                <div style={{ 
+                  padding: '12px 15px', 
+                  background: 'rgba(99, 102, 241, 0.1)', 
+                  border: '1px solid rgba(99, 102, 241, 0.3)', 
+                  borderRadius: '8px', 
+                  marginBottom: '15px', 
+                  fontSize: '0.85rem',
+                  lineHeight: '1.5'
+                }}>
+                  <div style={{ fontWeight: 'bold', color: '#818cf8', marginBottom: '4px' }}>
+                    📋 Ringkasan Produksi Multi-Chef:
+                  </div>
+                  <div>
+                    Laporan masakan sebanyak <strong>{items.filter(i => i.id_menu && (parseFloat(String(i.qty)) || 0) > 0).length} menu</strong> akan dicatat untuk setiap chef (<strong>{chefList.length} orang</strong>: {chefList.join(', ')}).
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Total data produksi yang akan disimpan: <strong>{items.filter(i => i.id_menu && (parseFloat(String(i.qty)) || 0) > 0).length * chefList.length} baris</strong> data.
+                  </div>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="btn btn-primary w-100" 
+                style={{ padding: '12px', fontWeight: 'bold' }} 
+                disabled={isSubmitting || chefList.length === 0 || items.filter(i => i.id_menu && (parseFloat(String(i.qty)) || 0) > 0).length === 0}
+              >
+                {isSubmitting ? 'Menyimpan Laporan...' : `Simpan Laporan Chef (${chefList.length} Chef)`}
               </button>
             </form>
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
     </div>
   );

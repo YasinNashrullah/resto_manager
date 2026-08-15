@@ -6,7 +6,7 @@ export default function LaporanShiftTab() {
   const store = useAppStore();
 
   const [namaPegawai, setNamaPegawai] = useState(() => {
-    return sessionStorage.getItem('active_waiter_name') || '';
+    return sessionStorage.getItem('active_waiter_name') || localStorage.getItem('active_waiter_name') || '';
   });
   const [usnRoblox, setUsnRoblox] = useState(() => {
     return localStorage.getItem('active_roblox_username') || '';
@@ -87,6 +87,9 @@ export default function LaporanShiftTab() {
     const savedRoblox = localStorage.getItem('active_roblox_username');
     if (savedRoblox) setUsnRoblox(savedRoblox);
 
+    const savedWaiter = sessionStorage.getItem('active_waiter_name') || localStorage.getItem('active_waiter_name');
+    if (savedWaiter) setNamaPegawai(savedWaiter);
+
     // Periodic check every 30 seconds for 1-hour expiration while tab is open
     const timer = setInterval(() => {
       checkAutoReset();
@@ -113,6 +116,7 @@ export default function LaporanShiftTab() {
   const handleSelectPegawai = (nama: string, jbt: string) => {
     setNamaPegawai(nama);
     sessionStorage.setItem('active_waiter_name', nama);
+    localStorage.setItem('active_waiter_name', nama);
     if (jbt) setPosisi(jbt);
     setIsDropdownOpen(false);
     setSearchPegawai('');
@@ -133,6 +137,8 @@ export default function LaporanShiftTab() {
     setDutyStartTime(timeStr);
     setIsOnDuty(true);
     localStorage.setItem('kalku_dutyStart', timeStr);
+    localStorage.setItem('active_waiter_name', namaPegawai.trim());
+    sessionStorage.setItem('active_waiter_name', namaPegawai.trim());
     // Cancel any pending off-duty auto-reset timer
     localStorage.removeItem('kalku_offDutyTimestamp');
   };
@@ -147,6 +153,14 @@ export default function LaporanShiftTab() {
 
     localStorage.setItem('kalku_lastDuty', JSON.stringify({ start: dutyStartTime, end: endTimeStr }));
     localStorage.setItem('kalku_offDutyTimestamp', Date.now().toString());
+
+    // Resolusi nama waiter yang valid
+    const resolvedWaiterName = (
+      namaPegawai || 
+      sessionStorage.getItem('active_waiter_name') || 
+      localStorage.getItem('active_waiter_name') || 
+      ''
+    ).trim();
 
     // Kirim draft otomatis ke Supabase duty_draft agar muncul di Review Duty (Draft) Manager
     try {
@@ -167,7 +181,7 @@ export default function LaporanShiftTab() {
       }
 
       const draftPayload = {
-        nama_pegawai: namaPegawai.trim() || 'Waiters',
+        nama_pegawai: resolvedWaiterName || 'Waiters',
         waktu_mulai: dutyStartTime,
         waktu_selesai: endTimeStr,
         total_omset: revenuePayload,

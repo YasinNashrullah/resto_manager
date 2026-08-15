@@ -22,6 +22,8 @@ import KalkulatorTab from './pages/waiter/KalkulatorTab';
 import LaporanShiftTab from './pages/waiter/LaporanShiftTab';
 import DataLoader from './components/DataLoader';
 
+import HiddenAIAnalystPage from './pages/HiddenAIAnalystPage';
+
 function App() {
   return (
     <DataLoader>
@@ -29,6 +31,9 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         
+        {/* Secret Hidden AI Analyst Route */}
+        <Route path="/ai-analyst" element={<HiddenAIAnalystPage />} />
+
         <Route path="/manager" element={<ManagerLayout />}>
           <Route index element={<DashboardTab />} />
           <Route path="dashboard" element={<DashboardTab />} />
@@ -46,6 +51,7 @@ function App() {
           <Route path="laporan-teks" element={<LaporanTeksTab />} />
           <Route path="data-chef" element={<DataChefTab />} />
           <Route path="ai" element={<AITab />} />
+          <Route path="ai-bulk" element={<AITab />} />
         </Route>
 
         <Route path="/chef" element={<ChefDashboard />} />

@@ -10,6 +10,13 @@ export function floorToTwo(num: number | string): number {
   return Math.floor(n * 100) / 100;
 }
 
+export function formatStockQty(qty: number | string, satuan?: string): string {
+  const n = Number(qty);
+  if (isNaN(n)) return `0 ${satuan || ''}`.trim();
+  const formatted = n % 1 === 0 ? n.toString() : (Math.round(n * 100) / 100).toString();
+  return `${formatted} ${satuan || ''}`.trim();
+}
+
 export function getJakartaDate(): string {
   const options = { timeZone: 'Asia/Jakarta', year: 'numeric' as const, month: '2-digit' as const, day: '2-digit' as const };
   const d = new Date().toLocaleDateString('en-CA', options); // en-CA gives YYYY-MM-DD
@@ -69,10 +76,13 @@ export function getDutyHours(d: any): number {
   if (!isNaN(jam) && jam > 0) return jam;
 
   const detail = d.detail_jual || {};
-  if (detail.waktu_mulai && detail.waktu_selesai && typeof detail.waktu_mulai === 'string' && typeof detail.waktu_selesai === 'string') {
-    const mParts = detail.waktu_mulai.split(':').map(Number);
-    const sParts = detail.waktu_selesai.split(':').map(Number);
-    if (mParts.length === 2 && sParts.length === 2 && !isNaN(mParts[0]) && !isNaN(mParts[1]) && !isNaN(sParts[0]) && !isNaN(sParts[1])) {
+  const wMulai = detail.waktu_mulai || d.waktu_mulai;
+  const wSelesai = detail.waktu_selesai || d.waktu_selesai;
+
+  if (wMulai && wSelesai && typeof wMulai === 'string' && typeof wSelesai === 'string') {
+    const mParts = wMulai.split(':').map(Number);
+    const sParts = wSelesai.split(':').map(Number);
+    if (mParts.length >= 2 && sParts.length >= 2 && !isNaN(mParts[0]) && !isNaN(mParts[1]) && !isNaN(sParts[0]) && !isNaN(sParts[1])) {
       let m = mParts[0] * 60 + mParts[1];
       let s = sParts[0] * 60 + sParts[1];
       if (s < m) s += 24 * 60;

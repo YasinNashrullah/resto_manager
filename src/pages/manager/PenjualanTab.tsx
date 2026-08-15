@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, getJakartaDate, getWeekRange } from '../../lib/utils';
 import { useLocation } from 'react-router-dom';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function PenjualanTab() {
   const store = useAppStore();
@@ -10,6 +11,20 @@ export default function PenjualanTab() {
   const isWaiter = location.pathname.startsWith('/waiter');
   const activeWaiter = sessionStorage.getItem('active_waiter_name') || '';
   
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -202,10 +217,35 @@ export default function PenjualanTab() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Yakin ingin menghapus Laporan Duty ini? Stok bahan akan dikembalikan secara otomatis.")) {
-      await supabase.from('duty').delete().eq('id_duty', id);
-      fetchData();
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Laporan Duty',
+      message: 'Yakin ingin menghapus Laporan Duty ini? Stok bahan akan dikembalikan secara otomatis.',
+      onConfirm: () => executeDelete(id)
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      // Optimistic local update
+      setDutyList(prev => prev.filter(d => d.id_duty !== id));
+      
+      const { error } = await supabase.from('duty').delete().eq('id_duty', id);
+      if (error) {
+        console.error("Gagal menghapus duty:", error);
+        alert("Gagal menghapus Laporan Duty: " + error.message);
+      }
+      
+      await store.fetchData();
+      await fetchData();
+    } catch (err: any) {
+      console.error("Error menghapus duty:", err);
+      alert("Error menghapus Laporan Duty: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -387,6 +427,16 @@ export default function PenjualanTab() {
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
     </div>
   );

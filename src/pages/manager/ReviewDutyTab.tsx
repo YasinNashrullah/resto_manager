@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency } from '../../lib/utils';
 import { useAppStore } from '../../store/useAppStore';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function ReviewDutyTab() {
   const store = useAppStore();
@@ -9,8 +10,23 @@ export default function ReviewDutyTab() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<any>(null);
   
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+  
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editNamaPegawai, setEditNamaPegawai] = useState('');
   const [editWaktuMulai, setEditWaktuMulai] = useState('');
   const [editWaktuSelesai, setEditWaktuSelesai] = useState('');
   const [editTanggal, setEditTanggal] = useState('');
@@ -41,6 +57,7 @@ export default function ReviewDutyTab() {
 
   const openModal = (draft: any) => {
     setSelectedDraft(draft);
+    setEditNamaPegawai(draft.nama_pegawai || '');
     setEditWaktuMulai(draft.waktu_mulai || '');
     setEditWaktuSelesai(draft.waktu_selesai || '');
     setEditTanggal(draft.created_at ? draft.created_at.split('T')[0] : '');
@@ -66,6 +83,7 @@ export default function ReviewDutyTab() {
     
     try {
       const payload = {
+        nama_pegawai: editNamaPegawai.trim() || selectedDraft.nama_pegawai,
         waktu_mulai: editWaktuMulai,
         waktu_selesai: editWaktuSelesai,
         total_omset: editOmset,
@@ -89,14 +107,8 @@ export default function ReviewDutyTab() {
   };
 
   const handleGenerateJSON = (draft: any) => {
-    // Generate JSON matching the format expected by AI Bulk input
-    // The format in LaporanTeksTab is typically an array of objects
-    // Example: [{"tanggal":"...","nama_ic":"...","waktu_mulai":"...","waktu_selesai":"...","total_omset":...,"items":[{"nama_menu":"...","qty":...}]}]
-    
-    // Use ISO string date prefix for basic format (YYYY-MM-DD)
     const dateStr = draft.created_at ? draft.created_at.split('T')[0] : new Date().toISOString().split('T')[0];
     
-    // Map id_menu to nama_menu
     const itemsMapped = (draft.detail_jual || []).map((i: any) => {
       const m = store.menu.find(x => x.id_menu === i.id_menu);
       return {
@@ -106,7 +118,7 @@ export default function ReviewDutyTab() {
     });
 
     const jsonObj = {
-      tanggal: dateStr, // You might want to let Manager input date, or default to today
+      tanggal: dateStr,
       nama_ic: draft.nama_pegawai,
       waktu_mulai: draft.waktu_mulai || "",
       waktu_selesai: draft.waktu_selesai || "",
@@ -123,10 +135,18 @@ export default function ReviewDutyTab() {
     });
   };
 
-  const handleMarkAsValidated = async (id: string) => {
-    if (!confirm('Tandai sebagai tervalidasi? Draft ini akan disembunyikan dari daftar pending.')) return;
-    
+  const handleMarkAsValidated = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Validasi Laporan',
+      message: 'Tandai sebagai tervalidasi? Draft ini akan disembunyikan dari daftar pending.',
+      onConfirm: () => executeMarkAsValidated(id)
+    });
+  };
+
+  const executeMarkAsValidated = async (id: string) => {
     try {
+      setIsDeleting(true);
       const { error } = await supabase
         .from('duty_draft')
         .update({ status: 'validated' })
@@ -135,14 +155,25 @@ export default function ReviewDutyTab() {
       if (error) throw error;
       fetchDrafts();
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert('Gagal memvalidasi: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
-  const handleDeleteDraft = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus draft laporan ini?')) return;
-    
+  const handleDeleteDraft = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Draft Laporan',
+      message: 'Apakah Anda yakin ingin menghapus draft laporan waiter ini?',
+      onConfirm: () => executeDeleteDraft(id)
+    });
+  };
+
+  const executeDeleteDraft = async (id: string) => {
     try {
+      setIsDeleting(true);
       const { error } = await supabase
         .from('duty_draft')
         .delete()
@@ -151,7 +182,11 @@ export default function ReviewDutyTab() {
       if (error) throw error;
       fetchDrafts();
     } catch (err: any) {
+      console.error("Gagal menghapus draft:", err);
       alert('Gagal menghapus draft: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -183,10 +218,20 @@ export default function ReviewDutyTab() {
                 <tr><td colSpan={6} style={{ textAlign: 'center' }}>Tidak ada laporan pending</td></tr>
               ) : drafts.map(d => {
                 const date = new Date(d.created_at).toLocaleString('id-ID');
+                const isGenericWaiters = !d.nama_pegawai || d.nama_pegawai === 'Waiters';
                 return (
                   <tr key={d.id}>
                     <td>{date}</td>
-                    <td><strong>{d.nama_pegawai}</strong></td>
+                    <td>
+                      <strong style={{ color: isGenericWaiters ? '#f87171' : '#f8fafc' }}>
+                        {d.nama_pegawai || 'Waiters'}
+                      </strong>
+                      {isGenericWaiters && (
+                        <span style={{ marginLeft: '6px', fontSize: '0.75rem', background: 'rgba(239,68,68,0.2)', color: '#f87171', padding: '2px 6px', borderRadius: '4px' }}>
+                          Pilih Nama
+                        </span>
+                      )}
+                    </td>
                     <td>{d.waktu_mulai} - {d.waktu_selesai}</td>
                     <td className="text-success font-weight-bold">{formatCurrency(d.total_omset)}</td>
                     <td><span style={{ padding: '3px 8px', borderRadius: '4px', background: 'rgba(252, 211, 77, 0.2)', color: '#fcd34d', fontSize: '0.85rem' }}>{d.status}</span></td>
@@ -219,7 +264,14 @@ export default function ReviewDutyTab() {
               </div>
               <div className="form-group">
                 <label>Nama Waiter</label>
-                <input type="text" className="form-control" value={selectedDraft.nama_pegawai} disabled style={{ background: 'var(--bg-dark)', cursor: 'not-allowed' }} />
+                <select className="form-control" required value={editNamaPegawai} onChange={e => setEditNamaPegawai(e.target.value)}>
+                  <option value="">-- Pilih Nama Waiter --</option>
+                  {store.pegawai.map((p: any) => (
+                    <option key={p.id_pegawai || p.nama_ic} value={p.nama_ic}>
+                      {p.nama_ic} ({p.jabatan || 'Staff'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ display: 'flex', gap: '15px' }}>
@@ -266,6 +318,16 @@ export default function ReviewDutyTab() {
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

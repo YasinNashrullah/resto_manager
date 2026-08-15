@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
-import { getWeekLabel, floorToTwo, formatCurrency, calculatePayrollForDutyList } from '../../lib/utils';
+import { getWeekLabel, floorToTwo, formatCurrency, calculatePayrollForDutyList, getDutyHours } from '../../lib/utils';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -347,13 +347,6 @@ export default function DashboardTab() {
       });
     });
 
-    // Also factor recipe usage from Produksi Chef
-    produksiChefList.forEach(p => {
-      const pQty = Number(p.qty) || 0;
-      const pIdOrName = p.id_menu || p.menu;
-      processRecipeUsage(pIdOrName, pQty);
-    });
-
     // 5. Calculations: Beban Gaji & Komisi (100% unified with KeuanganTab)
     let totalBebanGaji = calculatePayrollForDutyList(dutyList, state.pegawai || []).totalBebanGaji;
 
@@ -479,32 +472,28 @@ export default function DashboardTab() {
     const wMap = new Map();
     const hMap = new Map();
     dutyList.forEach(d => {
-      if (!wMap.has(d.nama_ic)) wMap.set(d.nama_ic, 0);
-      wMap.set(d.nama_ic, wMap.get(d.nama_ic) + (floorToTwo(d.total_omset) || 0));
+      const empName = d.nama_ic;
+      if (!empName) return;
 
-      let dutyJam = 0;
-      const detail = d.detail_jual || {};
-      if (detail.waktu_mulai && detail.waktu_selesai) {
-        const [mH, mM] = detail.waktu_mulai.split(':').map(Number);
-        const [sH, sM] = detail.waktu_selesai.split(':').map(Number);
-        let m = (mH * 60 + mM);
-        let s = (sH * 60 + sM);
-        if (s < m) s += 24 * 60;
-        dutyJam = (s - m) / 60;
-      }
-      if (!hMap.has(d.nama_ic)) hMap.set(d.nama_ic, 0);
-      hMap.set(d.nama_ic, hMap.get(d.nama_ic) + dutyJam);
+      if (!wMap.has(empName)) wMap.set(empName, 0);
+      wMap.set(empName, wMap.get(empName) + (floorToTwo(d.total_omset) || 0));
+
+      const dutyJam = getDutyHours(d);
+      if (!hMap.has(empName)) hMap.set(empName, 0);
+      hMap.set(empName, hMap.get(empName) + dutyJam);
     });
 
-    setTopWaiters(Array.from(wMap.entries()).sort((a,b) => b[1] - a[1]).slice(0, 3));
-    setTopHours(Array.from(hMap.entries()).sort((a,b) => b[1] - a[1]).slice(0, 3));
+    setTopWaiters(Array.from(wMap.entries()).filter(e => e[1] > 0).sort((a,b) => b[1] - a[1]).slice(0, 5));
+    setTopHours(Array.from(hMap.entries()).filter(e => e[1] > 0).sort((a,b) => b[1] - a[1]).slice(0, 5));
 
     const cMap = new Map();
     produksiChefList.forEach(p => {
-      if (!cMap.has(p.nama_ic_chef)) cMap.set(p.nama_ic_chef, 0);
-      cMap.set(p.nama_ic_chef, cMap.get(p.nama_ic_chef) + (floorToTwo(p.qty) || 0));
+      const chef = p.nama_ic_chef;
+      if (!chef) return;
+      if (!cMap.has(chef)) cMap.set(chef, 0);
+      cMap.set(chef, cMap.get(chef) + (floorToTwo(p.qty) || 0));
     });
-    setTopChefs(Array.from(cMap.entries()).sort((a,b) => b[1] - a[1]).slice(0, 3));
+    setTopChefs(Array.from(cMap.entries()).filter(e => e[1] > 0).sort((a,b) => b[1] - a[1]).slice(0, 5));
   }
 
   const formatMoney = (val: number) => formatCurrency(Math.round(val));
@@ -882,25 +871,25 @@ export default function DashboardTab() {
       </div>
 
       {/* Leaderboard Tim (Top Waiters, Top Chef, Hardworkers) */}
-      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
         <LeaderboardCard 
           title="Top Waiters" 
           subtitle="Berdasarkan total omset penjualan" 
-          colors={['#f59e0b', '#d97706', '#94a3b8']}
+          colors={['#f59e0b', '#f97316', '#eab308', '#84cc16', '#94a3b8']}
           items={topWaiters} 
           formatFn={(v: any) => formatMoney(v)}
         />
         <LeaderboardCard 
           title="Top Chef" 
           subtitle="Berdasarkan porsi masakan diproduksi" 
-          colors={['#ef4444', '#dc2626', '#b91c1c']}
+          colors={['#ef4444', '#f43f5e', '#ec4899', '#d946ef', '#a855f7']}
           items={topChefs} 
           formatFn={(v: any) => `${floorToTwo(v)} Porsi`}
         />
         <LeaderboardCard 
           title="Jam Kerja Tertinggi" 
           subtitle="Berdasarkan jam duty terdaftar" 
-          colors={['#3b82f6', '#2563eb', '#1d4ed8']}
+          colors={['#3b82f6', '#06b6d4', '#0ea5e9', '#6366f1', '#8b5cf6']}
           items={topHours} 
           formatFn={(v: any) => `${floorToTwo(v)} Jam`}
         />
@@ -927,19 +916,19 @@ function LeaderboardCard({ title, subtitle, items, colors, formatFn }: any) {
     <div className="card" style={{ padding: '20px', borderRadius: '10px' }}>
       <h3 style={{ marginTop: 0, textAlign: 'center', color: colors[0] }}>{title}</h3>
       <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '15px' }}>{subtitle}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {items.length === 0 && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Belum ada data</div>
         )}
         {items.map((item: any, i: number) => {
-          const itemColor = colors[i] || '#555';
+          const itemColor = colors[i] || '#64748b';
           return (
-            <div key={item[0]} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', borderLeft: `4px solid ${itemColor}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>#{i+1}</span>
-                <span style={{ fontWeight: 600, color: '#fff' }}>{item[0]}</span>
+            <div key={item[0]} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', borderLeft: `4px solid ${itemColor}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: itemColor, minWidth: '24px' }}>#{i + 1}</span>
+                <span style={{ fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item[0]}>{item[0]}</span>
               </div>
-              <div style={{ fontWeight: 'bold', color: itemColor }}>
+              <div style={{ fontWeight: 'bold', color: itemColor, flexShrink: 0, marginLeft: '8px', fontSize: '0.9rem' }}>
                 {formatFn(item[1])}
               </div>
             </div>

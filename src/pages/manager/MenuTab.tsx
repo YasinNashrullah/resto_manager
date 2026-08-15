@@ -2,10 +2,25 @@ import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, floorToTwo } from '../../lib/utils';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function MenuTab() {
   const store = useAppStore();
   
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -81,11 +96,30 @@ export default function MenuTab() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Yakin ingin menghapus menu ini?")) {
-      await supabase.from('menu').delete().eq('id_menu', id);
-      const { data } = await supabase.from('menu').select('*');
-      if (data) store.setMenu(data);
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Menu',
+      message: 'Yakin ingin menghapus menu ini?',
+      onConfirm: () => executeDelete(id)
+    });
+  };
+
+  const executeDelete = async (id: string) => {
+    try {
+      setIsDeleting(true);
+      const { error } = await supabase.from('menu').delete().eq('id_menu', id);
+      if (error) {
+        console.error("Gagal menghapus menu:", error);
+        alert("Gagal menghapus menu: " + error.message);
+      }
+      await store.fetchData();
+    } catch (err: any) {
+      console.error("Error menghapus menu:", err);
+      alert("Error menghapus menu: " + err.message);
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -253,6 +287,16 @@ export default function MenuTab() {
           </div>
         </div>
       )}
+
+      {/* Reusable Modern Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isLoading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
     </div>
   );

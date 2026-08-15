@@ -11,7 +11,17 @@ export default function ManagerLayout() {
 
   useEffect(() => {
     document.body.classList.remove('role-waiters', 'role-chef');
-  }, []);
+
+    // Listener Keyboard Shortcut Rahasia (Ctrl + Shift + A atau Cmd + Shift + A) untuk membuka AI Analyst
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        navigate('/ai-analyst');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
 
   const handleLogout = () => {
     // sessionStorage.removeItem('auth_manager');
@@ -70,7 +80,14 @@ export default function ManagerLayout() {
     }
   };
 
-  const menuItems = [
+  interface MenuItem {
+    path: string;
+    label: string;
+    icon?: string;
+    highlight?: boolean;
+  }
+
+  const menuItems: MenuItem[] = [
     { path: '/manager/dashboard', label: 'Dashboard Utama' },
     { path: '/manager/analisis-pegawai', label: 'Analisis Pegawai' },
     { path: '/manager/review-duty', label: 'Review Duty (Draft)' },
@@ -85,7 +102,7 @@ export default function ManagerLayout() {
     { path: '/manager/keuangan', label: 'Laporan Mingguan (Gaji)' },
     { path: '/manager/kas', label: 'Kas Restoran' },
     { path: '/manager/laporan-teks', label: 'Laporan Teks' },
-    { path: '/manager/ai', label: 'AI Bulk Input', icon: 'fa-solid fa-robot', highlight: true },
+    { path: '/manager/ai', label: 'AI Bulk Input' },
   ];
 
   return (

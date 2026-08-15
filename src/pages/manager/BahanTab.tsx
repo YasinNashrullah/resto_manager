@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { supabase } from '../../lib/supabase';
-import { getJakartaDate } from '../../lib/utils';
+import { getJakartaDate, formatStockQty } from '../../lib/utils';
 
 export default function BahanTab() {
   const store = useAppStore();
@@ -15,7 +15,7 @@ export default function BahanTab() {
   // Transfer State
   const [transferType, setTransferType] = useState('Bahan'); // Bahan | Makanan
   const [transferDari, setTransferDari] = useState('');
-  const [transferKe, setTransferKe] = useState('');
+  const [transferKeList, setTransferKeList] = useState<string[]>([]);
   const [transferItems, setTransferItemsState] = useState<{ id_item: string, qty: number }[]>([]);
 
   // Koreksi Batch State
@@ -66,34 +66,99 @@ export default function BahanTab() {
     }
   };
 
-  // --- Transfer Logic ---
+  // --- Multi-Recipient Transfer Helpers & Logic ---
+  const handleAddRecipient = (name: string) => {
+    if (name && !transferKeList.includes(name)) {
+      setTransferKeList([...transferKeList, name]);
+    }
+  };
+
+  const handleRemoveRecipient = (name: string) => {
+    setTransferKeList(transferKeList.filter(n => n !== name));
+  };
+
+  const handleSelectAllWaiters = () => {
+    const waiters = store.pegawai
+      .filter(p => p.status_kontrak === 'Aktif' && p.jabatan?.toLowerCase().includes('waiter') && p.nama_ic !== transferDari)
+      .map(p => p.nama_ic);
+    const combined = Array.from(new Set([...transferKeList, ...waiters]));
+    setTransferKeList(combined);
+  };
+
+  const handleSelectAllChefs = () => {
+    const chefs = store.pegawai
+      .filter(p => p.status_kontrak === 'Aktif' && p.jabatan?.toLowerCase().includes('chef') && p.nama_ic !== transferDari)
+      .map(p => p.nama_ic);
+    const combined = Array.from(new Set([...transferKeList, ...chefs]));
+    setTransferKeList(combined);
+  };
+
+  const handleSelectAllActive = () => {
+    const all = store.pegawai
+      .filter(p => p.status_kontrak === 'Aktif' && p.nama_ic !== transferDari)
+      .map(p => p.nama_ic);
+    setTransferKeList(all);
+  };
+
+  const handleClearRecipients = () => {
+    setTransferKeList([]);
+  };
+
   const handleSaveTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transferDari) {
+      alert("Silakan pilih pegawai pengirim.");
+      return;
+    }
+    if (transferKeList.length === 0) {
+      alert("Silakan pilih minimal 1 pegawai penerima.");
+      return;
+    }
     if (transferItems.length === 0) {
       alert("Silakan tambahkan minimal 1 item.");
       return;
     }
-    if (transferDari === transferKe) {
-      alert("Pegawai pengirim dan penerima tidak boleh sama.");
+
+    const invalidItem = transferItems.find(item => !item.id_item || !item.qty || Number(item.qty) <= 0);
+    if (invalidItem) {
+      alert("Pastikan semua item sudah dipilih dan jumlah Qty lebih dari 0.");
+      return;
+    }
+
+    if (transferKeList.includes(transferDari)) {
+      alert("Pegawai pengirim tidak boleh menjadi penerima.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const payloads = transferItems.map(item => ({
-        tanggal: getJakartaDate(),
-        dari_ic: transferDari,
-        ke_ic: transferKe,
-        tipe_item: transferType,
-        id_item: item.id_item,
-        qty: item.qty,
-        timestamp: new Date().toISOString()
-      }));
+      const payloads: any[] = [];
+      const tanggal = getJakartaDate();
+      const timestamp = new Date().toISOString();
 
-      await supabase.from('transfer_item').insert(payloads);
+      // Duplicate item list for each selected recipient
+      for (const ke of transferKeList) {
+        for (const item of transferItems) {
+          payloads.push({
+            tanggal: tanggal,
+            dari_ic: transferDari,
+            ke_ic: ke,
+            tipe_item: transferType,
+            id_item: item.id_item,
+            qty: Number(item.qty),
+            timestamp: timestamp
+          });
+        }
+      }
+
+      const { error } = await supabase.from('transfer_item').insert(payloads);
+      if (error) throw error;
       
+      alert(`Berhasil mengirim transfer ${transferItems.length} item ke ${transferKeList.length} penerima (${payloads.length} total data transfer)!`);
+
       setModalTransferOpen(false);
       setTransferItemsState([]);
+      setTransferKeList([]);
       fetchStok();
       
     } catch (error: any) {
@@ -244,16 +309,22 @@ export default function BahanTab() {
             setKoreksiItemsState([]);
             setModalKoreksiOpen(true);
           }}>Opname / Koreksi Stok Batch</button>
-          <button className="btn btn-warning btn-add-transfer" onClick={() => setModalTransferOpen(true)}>+ Transfer Item</button>
+          <button className="btn btn-warning btn-add-transfer" onClick={() => {
+            setTransferType('Bahan');
+            setTransferDari('');
+            setTransferKeList([]);
+            setTransferItemsState([]);
+            setModalTransferOpen(true);
+          }}>+ Transfer Item</button>
         </div>
       </div>
 
       <div className="dashboard-grid mb-20" style={{ marginBottom: '20px' }}>
         <div className="stat-card" style={{ gridColumn: 'span 12' }}>
-          <h3>Stok Bahan Mentah Restoran</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px', marginTop: '15px' }}>
+          <h3>Stok Bahan Mentah yang Dipegang Pegawai</h3>
+          <div id="container-stok-pegawai" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px', marginTop: '15px' }}>
             {Object.keys(stockPegawai).length === 0 ? (
-              <div style={{ color: '#777', width: '100%', textAlign: 'center', gridColumn: '1 / -1' }}>Belum ada stok bahan yang dipegang pegawai.</div>
+              <div style={{ color: '#777', width: '100%', textAlign: 'center', gridColumn: '1 / -1' }}>Belum ada stok bahan yang dipegang pegawai saat ini.</div>
             ) : (
               (() => {
                 const getJabatanRank = (jabatan: string): number => {
@@ -266,55 +337,59 @@ export default function BahanTab() {
                   return 6;
                 };
 
-                const sortedEntries = Object.entries(stockPegawai).sort(([nA], [nB]) => {
+                const sortedPegawaiNames = Object.keys(stockPegawai).sort((nA, nB) => {
                   const pA = store.pegawai.find(p => p.nama_ic === nA);
                   const pB = store.pegawai.find(p => p.nama_ic === nB);
-                  const rA = getJabatanRank(pA ? pA.jabatan : '');
-                  const rB = getJabatanRank(pB ? pB.jabatan : '');
-                  if (rA !== rB) return rA - rB;
+                  const rankA = pA ? getJabatanRank(pA.jabatan) : 999;
+                  const rankB = pB ? getJabatanRank(pB.jabatan) : 999;
+                  if (rankA !== rankB) return rankA - rankB;
                   return nA.localeCompare(nB, 'id', { sensitivity: 'base' });
                 });
 
-                return sortedEntries.map(([namaChef, bahanList]) => {
+                return sortedPegawaiNames.map(namaChef => {
                   if (namaChef === "Sistem (Koreksi)") return null;
-                  const activeBahan = Object.entries(bahanList).filter(([_, qty]) => Math.abs(qty) >= 0.001);
-                  if (activeBahan.length === 0) return null;
+                  const items = stockPegawai[namaChef];
+                  const bahanEntries = Object.entries(items).filter(([_, qty]) => Number(qty) !== 0);
+                  if (bahanEntries.length === 0) return null;
 
                   const pegawaiInfo = store.pegawai.find(p => p.nama_ic === namaChef);
                   const jabatan = pegawaiInfo ? pegawaiInfo.jabatan : "Pegawai";
                   const inisial = namaChef.charAt(0).toUpperCase();
 
-                return (
-                  <div key={namaChef} style={{ background: 'var(--bg-card)', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                      <div style={{ background: 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px' }}>
-                        {inisial}
+                  return (
+                    <div key={namaChef} style={{ background: 'var(--bg-card)', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                        <div style={{ background: 'var(--accent-color)', color: 'white', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', flexShrink: 0 }}>
+                          {inisial}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={namaChef}>{namaChef}</h4>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jabatan}</span>
+                        </div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h4 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={namaChef}>{namaChef}</h4>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jabatan}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {bahanEntries.map(([id_bahan, qty]: [string, any]) => {
+                          const bahan = store.bahan.find(b => b.id_bahan === id_bahan);
+                          const namaBahan = bahan ? bahan.nama_bahan : id_bahan;
+                          const satuan = bahan ? bahan.satuan : 'Pcs';
+                          const isMinus = Number(qty) < 0;
+                          const badgeBg = isMinus ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
+                          const badgeText = isMinus ? "var(--danger-color)" : "var(--success-color)";
+                          return (
+                            <div key={id_bahan} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg-hover)', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '5px' }}>
+                              <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={namaBahan}>{namaBahan}</span>
+                              <span style={{ background: badgeBg, color: badgeText, padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
+                                {formatStockQty(qty, satuan)}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {activeBahan.map(([id_bahan, qty]) => {
-                        const bahanInfo = store.bahan.find(b => b.id_bahan === id_bahan);
-                        if (!bahanInfo) return null;
-                        const isMinus = qty < 0;
-                        return (
-                          <div key={id_bahan} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'var(--bg-hover)', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '5px' }}>
-                            <span style={{ color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }} title={bahanInfo.nama_bahan}>{bahanInfo.nama_bahan}</span>
-                            <span style={{ background: isMinus ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)', color: isMinus ? 'var(--danger-color)' : 'var(--success-color)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, fontSize: '0.85rem', flexShrink: 0 }}>
-                              {qty} {bahanInfo.satuan}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              });
-            })()
-          )}
+                  );
+                });
+              })()
+            )}
           </div>
         </div>
       </div>
@@ -322,43 +397,186 @@ export default function BahanTab() {
       {/* Modal Transfer */}
       {modalTransferOpen && (
         <div className="modal" style={{ display: 'flex' }}>
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '680px', width: '95%' }}>
             <span className="close-btn" onClick={() => setModalTransferOpen(false)}>&times;</span>
-            <h2>Transfer Item / Bahan / Makanan</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Transfer Item / Bahan / Makanan</h2>
             <form onSubmit={handleSaveTransfer}>
-              <div style={{ display: 'flex', gap: '15px' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Pengirim (Dari Pegawai)</label>
-                  <select required value={transferDari} onChange={e => setTransferDari(e.target.value)}>
+              
+              {/* Row 1: Pengirim & Tipe Item */}
+              <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                  <label style={{ fontWeight: 'bold' }}>Pengirim (Dari Pegawai)</label>
+                  <select 
+                    required 
+                    className="form-control"
+                    value={transferDari} 
+                    onChange={e => {
+                      const newDari = e.target.value;
+                      setTransferDari(newDari);
+                      if (transferKeList.includes(newDari)) {
+                        setTransferKeList(transferKeList.filter(k => k !== newDari));
+                      }
+                    }}
+                  >
                     <option value="">-- Pilih Pengirim --</option>
                     {store.pegawai.filter(p => p.status_kontrak === 'Aktif').map(p => (
                       <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} ({p.jabatan})</option>
                     ))}
                   </select>
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Penerima (Ke Pegawai)</label>
-                  <select required value={transferKe} onChange={e => setTransferKe(e.target.value)}>
-                    <option value="">-- Pilih Penerima --</option>
-                    {store.pegawai.filter(p => p.status_kontrak === 'Aktif').map(p => (
-                      <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} ({p.jabatan})</option>
-                    ))}
+
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                  <label style={{ fontWeight: 'bold' }}>Tipe Item yang Ditransfer</label>
+                  <select 
+                    required 
+                    className="form-control"
+                    value={transferType} 
+                    onChange={e => {
+                      setTransferType(e.target.value);
+                      setTransferItemsState([]);
+                    }}
+                  >
+                    <option value="Bahan">Bahan Mentah (Gudang / Chef)</option>
+                    <option value="Makanan">Makanan Jadi (Chef &rarr; Waiters)</option>
                   </select>
                 </div>
               </div>
               
-              <div className="form-group">
-                <label>Tipe Item yang Ditransfer</label>
-                <select required value={transferType} onChange={e => {
-                  setTransferType(e.target.value);
-                  setTransferItemsState([]);
-                }}>
-                  <option value="Bahan">Bahan Mentah (Gudang / Chef)</option>
-                  <option value="Makanan">Makanan Jadi (Chef &rarr; Waiters)</option>
+              {/* Row 2: Penerima (Multi-Penerima) */}
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontWeight: 'bold', margin: 0 }}>
+                    Penerima (Ke Pegawai) <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>(Bisa pilih 2 atau lebih)</span>
+                  </label>
+                  <span style={{ 
+                    fontSize: '0.8rem', 
+                    padding: '2px 8px', 
+                    borderRadius: '10px', 
+                    background: transferKeList.length > 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    color: transferKeList.length > 0 ? 'var(--success-color)' : 'var(--text-secondary)',
+                    fontWeight: 'bold'
+                  }}>
+                    {transferKeList.length} Penerima Terpilih
+                  </span>
+                </div>
+
+                {/* Quick select buttons */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm" 
+                    style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleSelectAllWaiters}
+                  >
+                    + Semua Waiter
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm" 
+                    style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleSelectAllChefs}
+                  >
+                    + Semua Chef
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm" 
+                    style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleSelectAllActive}
+                  >
+                    + Pilih Semua
+                  </button>
+                  {transferKeList.length > 0 && (
+                    <button 
+                      type="button" 
+                      className="btn btn-sm" 
+                      style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      onClick={handleClearRecipients}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown to add single recipient */}
+                <select 
+                  className="form-control" 
+                  style={{ width: '100%', marginBottom: '8px' }} 
+                  value="" 
+                  onChange={e => {
+                    handleAddRecipient(e.target.value);
+                  }}
+                >
+                  <option value="">+ Tambah Penerima (Klik untuk memilih)...</option>
+                  {store.pegawai
+                    .filter(p => p.status_kontrak === 'Aktif' && p.nama_ic !== transferDari && !transferKeList.includes(p.nama_ic))
+                    .map(p => (
+                      <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} ({p.jabatan})</option>
+                    ))
+                  }
                 </select>
+
+                {/* Selected Recipients Badges Container */}
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  gap: '6px', 
+                  minHeight: '40px', 
+                  padding: '8px', 
+                  background: 'var(--bg-dark)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '6px' 
+                }}>
+                  {transferKeList.length === 0 ? (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', alignSelf: 'center', fontStyle: 'italic' }}>
+                      Belum ada penerima dipilih. Gunakan tombol cepat di atas atau pilih dari dropdown.
+                    </span>
+                  ) : (
+                    transferKeList.map(name => {
+                      const emp = store.pegawai.find(p => p.nama_ic === name);
+                      return (
+                        <span 
+                          key={name} 
+                          style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: '6px', 
+                            background: '#2d3748', 
+                            color: '#edf2f7', 
+                            border: '1px solid #4a5568', 
+                            borderRadius: '16px', 
+                            padding: '3px 10px', 
+                            fontSize: '0.82rem' 
+                          }}
+                        >
+                          <span>👤 {name} {emp ? <small style={{ opacity: 0.75 }}>({emp.jabatan})</small> : ''}</span>
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveRecipient(name)} 
+                            style={{ 
+                              background: 'transparent', 
+                              border: 'none', 
+                              color: '#fc8181', 
+                              cursor: 'pointer', 
+                              fontWeight: 'bold', 
+                              fontSize: '1rem', 
+                              lineHeight: 1, 
+                              padding: 0,
+                              marginLeft: '2px'
+                            }}
+                            title="Hapus penerima ini"
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              <h3 style={{ margin: '15px 0', fontSize: '1.1rem' }}>Daftar Item</h3>
+              {/* Daftar Item */}
+              <h3 style={{ margin: '15px 0 10px', fontSize: '1.1rem' }}>Daftar Item yang Ditransfer</h3>
               <div id="transfer-items-container">
                 {transferItems.map((ti, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
@@ -373,7 +591,7 @@ export default function BahanTab() {
                         store.menu.filter(m => m.tipe_menu === 'Satuan').map(m => <option key={m.id_menu} value={m.id_menu}>{m.nama_menu}</option>)
                       }
                     </select>
-                    <input type="number" className="form-control" placeholder="Qty" min="0.01" step="0.01" required style={{ width: '100px' }} value={ti.qty || ''} onChange={e => {
+                    <input type="number" className="form-control" placeholder="Qty" min="0.01" step="0.01" required style={{ width: '110px' }} value={ti.qty || ''} onChange={e => {
                       const newItems = [...transferItems];
                       newItems[idx].qty = Number(e.target.value);
                       setTransferItemsState(newItems);
@@ -386,11 +604,42 @@ export default function BahanTab() {
                   </div>
                 ))}
               </div>
+              
               <button type="button" className="btn btn-sm btn-primary" style={{ marginBottom: '15px' }} onClick={() => {
                 setTransferItemsState([...transferItems, { id_item: '', qty: 0 }]);
               }}>+ Tambah Item Transfer</button>
 
-              <button type="submit" className="btn btn-warning w-100" disabled={isSubmitting}>Kirim Transfer</button>
+              {/* Duplicate Summary Card */}
+              {transferKeList.length > 0 && transferItems.length > 0 && (
+                <div style={{ 
+                  padding: '12px 15px', 
+                  background: 'rgba(99, 102, 241, 0.1)', 
+                  border: '1px solid rgba(99, 102, 241, 0.3)', 
+                  borderRadius: '8px', 
+                  marginBottom: '15px', 
+                  fontSize: '0.85rem',
+                  lineHeight: '1.5'
+                }}>
+                  <div style={{ fontWeight: 'bold', color: '#818cf8', marginBottom: '4px' }}>
+                    📋 Ringkasan Duplikasi Transfer:
+                  </div>
+                  <div>
+                    Setiap penerima (<strong>{transferKeList.length} orang</strong>) akan menerima <strong>{transferItems.filter(i => i.id_item).length} item</strong> yang terdaftar di atas secara identik.
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Total transaksi transfer yang akan dibuat: <strong>{transferItems.filter(i => i.id_item).length * transferKeList.length} baris</strong> data.
+                  </div>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="btn btn-warning w-100" 
+                disabled={isSubmitting || transferKeList.length === 0 || transferItems.length === 0 || !transferDari}
+                style={{ fontWeight: 'bold', padding: '12px' }}
+              >
+                {isSubmitting ? 'Mengirim Transfer...' : `Kirim Transfer (${transferKeList.length} Penerima)`}
+              </button>
             </form>
           </div>
         </div>
