@@ -144,14 +144,15 @@ export default function LaporanShiftTab() {
   };
 
   const handleOffDuty = async () => {
-    if (!dutyStartTime) return;
+    const effectiveStartTime = dutyStartTime || localStorage.getItem('kalku_dutyStart') || '';
+    if (!effectiveStartTime) return;
     const now = new Date();
-    const endTimeStr = `${now.getHours().toString().padStart(2, '0')}.${now.getMinutes().toString().padStart(2, '0')}`;
+    const endTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    generateLaporanDuty(dutyStartTime, endTimeStr);
+    generateLaporanDuty(effectiveStartTime, endTimeStr);
     generateLaporanPenjualan();
 
-    localStorage.setItem('kalku_lastDuty', JSON.stringify({ start: dutyStartTime, end: endTimeStr }));
+    localStorage.setItem('kalku_lastDuty', JSON.stringify({ start: effectiveStartTime, end: endTimeStr }));
     localStorage.setItem('kalku_offDutyTimestamp', Date.now().toString());
 
     // Resolusi nama waiter yang valid
@@ -162,7 +163,7 @@ export default function LaporanShiftTab() {
       ''
     ).trim();
 
-    // Kirim draft otomatis ke Supabase duty_draft agar muncul di Review Duty (Draft) Manager
+    // Kirim draft otomatis ke Supabase duty_draft agar muncul di Review Duty Draft Manager
     try {
       const savedSales = localStorage.getItem('kalku_salesData');
       let itemsPayload: any[] = [];
@@ -180,9 +181,16 @@ export default function LaporanShiftTab() {
         } catch (e) {}
       }
 
+      const formatTime = (t: string) => {
+        if (!t) return '';
+        const clean = t.trim().replace('.', ':');
+        const parts = clean.split(':');
+        return parts.length >= 2 ? `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}` : clean;
+      };
+
       const draftPayload = {
         nama_pegawai: resolvedWaiterName || 'Waiters',
-        waktu_mulai: dutyStartTime,
+        waktu_mulai: formatTime(effectiveStartTime),
         waktu_selesai: endTimeStr,
         total_omset: revenuePayload,
         detail_jual: itemsPayload,

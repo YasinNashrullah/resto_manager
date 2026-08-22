@@ -29,8 +29,10 @@ export default function MenuTab() {
   const [namaMenu, setNamaMenu] = useState('');
   const [tipeMenu, setTipeMenu] = useState('Satuan');
   const [hargaJual, setHargaJual] = useState<number | ''>('');
+  const [hppManual, setHppManual] = useState<number | ''>('');
+  const [tampilDiKalkulator, setTampilDiKalkulator] = useState(true);
   
-  // Array of resep items: either id_bahan (for Satuan) or id_menu_satuan (for Paket)
+  // Array of resep items: either id_bahan for Satuan or id_menu_satuan for Paket
   const [resep, setResep] = useState<{ id: string, qty: number }[]>([]);
 
   const handleOpenModal = (m?: any) => {
@@ -39,6 +41,8 @@ export default function MenuTab() {
       setNamaMenu(m.nama_menu);
       setTipeMenu(m.tipe_menu);
       setHargaJual(m.harga_jual);
+      setHppManual(m.hpp_manual !== null && m.hpp_manual !== undefined ? m.hpp_manual : '');
+      setTampilDiKalkulator(m.tampil_di_kalkulator !== false);
       
       const parsedResep = m.resep || [];
       const newResep = parsedResep.map((r: any) => ({
@@ -51,6 +55,8 @@ export default function MenuTab() {
       setNamaMenu('');
       setTipeMenu('Satuan');
       setHargaJual('');
+      setHppManual('');
+      setTampilDiKalkulator(true);
       setResep([]);
     }
     setModalOpen(true);
@@ -74,6 +80,8 @@ export default function MenuTab() {
         nama_menu: namaMenu,
         tipe_menu: tipeMenu,
         harga_jual: Number(hargaJual),
+        hpp_manual: hppManual === '' ? null : Number(hppManual),
+        tampil_di_kalkulator: tampilDiKalkulator,
         resep: resepPayload
       };
 
@@ -82,10 +90,10 @@ export default function MenuTab() {
       } else {
         await supabase.from('menu').insert([payload]);
       }
-      
+
+      await supabase.rpc('recalculate_all_menu_hpp');
       setModalOpen(false);
       
-      // Refresh menu
       const { data } = await supabase.from('menu').select('*');
       if (data) store.setMenu(data);
       
@@ -96,11 +104,21 @@ export default function MenuTab() {
     }
   };
 
+  const handleToggleKalkulator = async (m: any, isChecked: boolean) => {
+    try {
+      await supabase.from('menu').update({ tampil_di_kalkulator: isChecked }).eq('id_menu', m.id_menu);
+      const { data } = await supabase.from('menu').select('*');
+      if (data) store.setMenu(data);
+    } catch (err: any) {
+      console.error("Gagal memperbarui status tampil di kalkulator:", err);
+    }
+  };
+
   const handleDelete = (id: string) => {
     setConfirmModal({
       isOpen: true,
       title: 'Hapus Menu',
-      message: 'Yakin ingin menghapus menu ini?',
+      message: 'Yakin ingin menghapus menu ini',
       onConfirm: () => executeDelete(id)
     });
   };
@@ -146,8 +164,8 @@ export default function MenuTab() {
   return (
     <div className="tab-pane active" style={{ display: 'block' }}>
       <div className="header-action">
-        <h1>Menu & Resep</h1>
-        {!isWaiters && <button className="btn btn-primary" onClick={() => handleOpenModal()}>+ Tambah Menu Baru</button>}
+        <h1>Menu dan Resep</h1>
+        {!isWaiters && <button className="btn btn-primary" onClick={() => handleOpenModal()}>Tambah Menu Baru</button>}
       </div>
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -161,14 +179,15 @@ export default function MenuTab() {
                 <th>Kategori</th>
                 <th>Harga Jual</th>
                 <th>HPP</th>
-                <th>Untung/porsi</th>
+                <th>Untung</th>
                 <th>Komposisi</th>
+                {!isWaiters && <th style={{ textAlign: 'center' }}>Visibility</th>}
                 {!isWaiters && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
               {sortedMenu.length === 0 ? (
-                <tr><td colSpan={isWaiters ? 6 : 7} style={{ textAlign: 'center' }}>Belum ada data menu</td></tr>
+                <tr><td colSpan={isWaiters ? 6 : 8} style={{ textAlign: 'center' }}>Belum ada data menu</td></tr>
               ) : sortedMenu.map(m => {
                 let resepText: string[] = [];
                 let totalModal = 0;
@@ -178,7 +197,7 @@ export default function MenuTab() {
                     m.resep.forEach((r: any) => {
                       const b = store.bahan.find(x => x.id_bahan === r.id_bahan);
                       if (b) {
-                        resepText.push(`${b.nama_bahan} (x${r.qty})`);
+                        resepText.push(`${b.nama_bahan} ${r.qty}`);
                         totalModal += floorToTwo(b.harga_per_unit || 0) * floorToTwo(r.qty);
                       }
                     });
@@ -186,7 +205,7 @@ export default function MenuTab() {
                     m.resep.forEach((r: any) => {
                       const ms = store.menu.find(x => x.id_menu === r.id_menu_satuan);
                       if (ms) {
-                        resepText.push(`${ms.nama_menu} (x${r.qty})`);
+                        resepText.push(`${ms.nama_menu} ${r.qty}`);
                         if (ms.resep) {
                           ms.resep.forEach((r2: any) => {
                             const b = store.bahan.find(x => x.id_bahan === r2.id_bahan);
@@ -198,16 +217,30 @@ export default function MenuTab() {
                   }
                 }
 
-                const keuntungan = floorToTwo(m.harga_jual) - totalModal;
+                const hasManualHpp = m.hpp_manual !== null && m.hpp_manual !== undefined && Number(m.hpp_manual) > 0;
+                const finalHpp = hasManualHpp ? Number(m.hpp_manual) : floorToTwo(m.hpp_terakhir || totalModal);
+                const keuntungan = floorToTwo(m.harga_jual) - finalHpp;
 
                 return (
                   <tr key={m.id_menu}>
                     <td><strong>{m.nama_menu}</strong></td>
                     <td><span className={`badge ${m.tipe_menu === 'Paket' ? 'badge-paket' : 'badge-satuan'}`}>{m.tipe_menu}</span></td>
                     <td>{formatCurrency(m.harga_jual)}</td>
-                    <td><span style={{ color: 'var(--danger-color)', fontWeight: 'bold' }}>{formatCurrency(totalModal)}</span></td>
+                    <td>
+                      <span style={{ color: 'var(--danger-color)', fontWeight: 'bold' }}>{formatCurrency(finalHpp)}</span>
+                    </td>
                     <td><span style={{ color: 'var(--success-color)', fontWeight: 'bold' }}>{formatCurrency(keuntungan)}</span></td>
                     <td style={{ maxWidth: '250px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{resepText.join(', ') || '-'}</td>
+                    {!isWaiters && (
+                      <td style={{ textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                          checked={m.tampil_di_kalkulator !== false} 
+                          onChange={e => handleToggleKalkulator(m, e.target.checked)} 
+                        />
+                      </td>
+                    )}
                     {!isWaiters && (
                       <td>
                         <button className="btn btn-sm btn-primary" onClick={() => handleOpenModal(m)}>Edit</button>
@@ -228,29 +261,49 @@ export default function MenuTab() {
             <span className="close-btn" onClick={() => setModalOpen(false)}>&times;</span>
             <h2>{idMenu ? 'Edit Menu' : 'Tambah Menu Baru'}</h2>
             <form onSubmit={handleSave}>
-              <div className="form-group">
-                <label>Nama Menu</label>
-                <input type="text" required value={namaMenu} onChange={e => setNamaMenu(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Tipe Menu / Kategori</label>
-                <select required value={tipeMenu} onChange={e => {
-                  setTipeMenu(e.target.value);
-                  setResep([]);
-                }}>
-                  <option value="Satuan">Satuan (Minuman/Makanan)</option>
-                  <option value="Paket">Paket</option>
-                  <option value="Wedding Package">Wedding Package</option>
-                  <option value="Birthday Package">Birthday Package</option>
-                  <option value="Package Kerjasama">Package Kerjasama</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Harga Jual ($)</label>
-                <input type="number" step="0.01" required value={hargaJual} onChange={e => setHargaJual(e.target.value === '' ? '' : Number(e.target.value))} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div className="form-group">
+                  <label>Nama Menu</label>
+                  <input type="text" required value={namaMenu} onChange={e => setNamaMenu(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Tipe Menu Kategori</label>
+                  <select required value={tipeMenu} onChange={e => {
+                    setTipeMenu(e.target.value);
+                    setResep([]);
+                  }}>
+                    <option value="Satuan">Satuan Minuman Makanan</option>
+                    <option value="Paket">Paket</option>
+                    <option value="Wedding Package">Wedding Package</option>
+                    <option value="Birthday Package">Birthday Package</option>
+                    <option value="Package Kerjasama">Package Kerjasama</option>
+                  </select>
+                </div>
               </div>
 
-              <h3 style={{ margin: '15px 0', fontSize: '1.1rem' }}>Resep / Komposisi</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div className="form-group">
+                  <label>Harga Jual</label>
+                  <input type="number" step="0.01" required value={hargaJual} onChange={e => setHargaJual(e.target.value === '' ? '' : Number(e.target.value))} />
+                </div>
+                <div className="form-group">
+                  <label>HPP Manual Opsional</label>
+                  <input type="number" step="0.01" placeholder="Otomatis jika kosong" value={hppManual} onChange={e => setHppManual(e.target.value === '' ? '' : Number(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+                <input 
+                  type="checkbox" 
+                  id="chk_kalkulator" 
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  checked={tampilDiKalkulator} 
+                  onChange={e => setTampilDiKalkulator(e.target.checked)} 
+                />
+                <label htmlFor="chk_kalkulator" style={{ margin: 0, cursor: 'pointer', fontSize: '0.9rem' }}>Visibility Kalkulator</label>
+              </div>
+
+              <h3 style={{ margin: '15px 0', fontSize: '1.1rem' }}>Resep Komposisi</h3>
               <div id="resep-container">
                 {resep.map((r, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
@@ -259,13 +312,13 @@ export default function MenuTab() {
                       newResep[idx].id = e.target.value;
                       setResep(newResep);
                     }}>
-                      <option value="">-- Pilih --</option>
+                      <option value="">Pilih Item</option>
                       {tipeMenu === 'Satuan' ? 
-                        store.bahan.map(b => <option key={b.id_bahan} value={b.id_bahan}>{b.nama_bahan} ({b.satuan})</option>) :
+                        store.bahan.map(b => <option key={b.id_bahan} value={b.id_bahan}>{b.nama_bahan} - {b.satuan}</option>) :
                         store.menu.filter(m => m.tipe_menu === 'Satuan').map(m => <option key={m.id_menu} value={m.id_menu}>{m.nama_menu}</option>)
                       }
                     </select>
-                    <input type="number" className="form-control" style={{ flex: 1 }} placeholder="Qty" min="0.01" step="0.01" required value={r.qty || ''} onChange={e => {
+                    <input type="number" className="form-control" style={{ flex: 1 }} placeholder="Jumlah Qty" min="0.01" step="0.01" required value={r.qty || ''} onChange={e => {
                       const newResep = [...resep];
                       newResep[idx].qty = Number(e.target.value);
                       setResep(newResep);
@@ -274,13 +327,13 @@ export default function MenuTab() {
                       const newResep = [...resep];
                       newResep.splice(idx, 1);
                       setResep(newResep);
-                    }}>X</button>
+                    }}>Hapus Item</button>
                   </div>
                 ))}
               </div>
               <button type="button" className="btn btn-secondary btn-sm w-100" style={{ marginBottom: '15px' }} onClick={() => {
                 setResep([...resep, { id: '', qty: 0 }]);
-              }}>+ Tambah Bahan / Komposisi</button>
+              }}>Tambah Bahan Komposisi</button>
 
               <button type="submit" className="btn btn-primary w-100" disabled={isSubmitting}>Simpan Menu</button>
             </form>

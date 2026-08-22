@@ -22,7 +22,9 @@ export default function GudangTab() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [bahanList, setBahanList] = useState<any[]>([]);
+  const [bahanJadiList, setBahanJadiList] = useState<any[]>([]);
   const [globalStok, setGlobalStok] = useState<Record<string, number>>({});
+  const [globalStokMakanan, setGlobalStokMakanan] = useState<Record<string, number>>({});
   
   const [restockList, setRestockList] = useState<any[]>([]);
   const [activeWeeks, setActiveWeeks] = useState<any[]>([]);
@@ -35,10 +37,10 @@ export default function GudangTab() {
   
   const [formDataBahan, setFormDataBahan] = useState({ id_bahan: '', nama_bahan: '', harga_per_unit: 0, satuan: 'pcs' });
   
-  // Batch Restock Form State
+  // Form State Restock Massal
   const [restockTanggal, setRestockTanggal] = useState(getJakartaDate());
   const [restockPembeli, setRestockPembeli] = useState('');
-  const [restockItems, setRestockItemsState] = useState<{ id_bahan: string, qty: number | string, harga: number | string }[]>([]);
+  const [restockItems, setRestockItemsState] = useState<{ id_item: string, tipe_item: 'Bahan' | 'Makanan', qty: number | string, harga: number | string }[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -49,7 +51,10 @@ export default function GudangTab() {
   useEffect(() => {
     const sorted = [...store.bahan].sort((a, b) => (parseFloat(a.harga_per_unit) || 0) - (parseFloat(b.harga_per_unit) || 0));
     setBahanList(sorted);
-  }, [store.bahan]);
+
+    const menuSatuan = store.menu.filter(m => (m.tipe_menu || '').toLowerCase().includes('satuan'));
+    setBahanJadiList(menuSatuan);
+  }, [store.bahan, store.menu]);
 
   useEffect(() => {
     fetchWeeks();
@@ -61,15 +66,26 @@ export default function GudangTab() {
 
   async function fetchStok() {
     try {
-      const { data } = await supabase.rpc('get_stock_bahan_pegawai');
-      if (data) {
-        const map: Record<string, number> = {};
-        data.forEach((s: any) => {
-          if (s.nama_ic !== 'Sistem (Koreksi)') {
-            map[s.id_bahan] = (map[s.id_bahan] || 0) + parseFloat(s.qty);
+      const { data: dataBahan } = await supabase.rpc('get_stock_bahan_pegawai');
+      if (dataBahan) {
+        const mapBahan: Record<string, number> = {};
+        dataBahan.forEach((s: any) => {
+          if (s.nama_ic !== 'Sistem Koreksi') {
+            mapBahan[s.id_bahan] = (mapBahan[s.id_bahan] || 0) + parseFloat(s.qty);
           }
         });
-        setGlobalStok(map);
+        setGlobalStok(mapBahan);
+      }
+
+      const { data: dataMakanan } = await supabase.rpc('get_stock_makanan_pegawai');
+      if (dataMakanan) {
+        const mapMakanan: Record<string, number> = {};
+        dataMakanan.forEach((s: any) => {
+          if (s.nama_ic !== 'Sistem Koreksi') {
+            mapMakanan[s.id_menu] = (mapMakanan[s.id_menu] || 0) + parseFloat(s.qty);
+          }
+        });
+        setGlobalStokMakanan(mapMakanan);
       }
     } catch (err) {
       console.error(err);
@@ -168,32 +184,33 @@ export default function GudangTab() {
     }
   };
 
-  // --- Auto Load All Bahan for Restock Batch ---
+  // Muat semua bahan mentah ke form restock
   const handleAutoLoadAllRestockItems = () => {
-    const items = store.bahan.map(b => ({
-      id_bahan: b.id_bahan,
+    const items: { id_item: string, tipe_item: 'Bahan' | 'Makanan', qty: number | string, harga: number | string }[] = store.bahan.map(b => ({
+      id_item: b.id_bahan,
+      tipe_item: 'Bahan',
       qty: 0,
       harga: b.harga_per_unit || 0
     }));
     setRestockItemsState(items);
   };
 
-  // --- Batch Restock Submit Handler ---
+  // Simpan transaksi batch restock
   const handleSaveRestockBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!restockPembeli) {
-      alert("Silakan pilih Nama Pembeli (IC Pegawai).");
+      alert("Silakan pilih Nama Pembeli IC Pegawai");
       return;
     }
     if (restockItems.length === 0) {
-      alert("Silakan tambahkan minimal 1 bahan untuk direstock.");
+      alert("Silakan tambahkan minimal 1 item untuk direstock");
       return;
     }
 
-    const validItems = restockItems.filter(i => i.id_bahan && (parseFloat(String(i.qty)) || 0) > 0);
+    const validItems = restockItems.filter(i => i.id_item && (parseFloat(String(i.qty)) || 0) > 0);
 
     if (validItems.length === 0) {
-      alert("Masukkan jumlah (Qty > 0) pada minimal 1 bahan.");
+      alert("Masukkan jumlah Qty lebih dari 0 pada minimal 1 item");
       return;
     }
 
@@ -205,7 +222,8 @@ export default function GudangTab() {
         return {
           tanggal: restockTanggal,
           nama_pembeli: restockPembeli,
-          id_bahan: item.id_bahan,
+          id_bahan: item.id_item,
+          tipe_item: item.tipe_item || 'Bahan',
           jumlah_unit: qtyNum,
           harga_aktual_per_unit: hargaNum,
           total_biaya: qtyNum * hargaNum
@@ -213,12 +231,14 @@ export default function GudangTab() {
       });
 
       await supabase.from('pengeluaran').insert(payloads);
-      alert(`Berhasil menyimpan ${payloads.length} transaksi pembelian/restock bahan!`);
+      await supabase.rpc('recalculate_all_menu_hpp');
+      alert(`Berhasil menyimpan ${payloads.length} transaksi pembelian restock`);
       
       setModalRestockOpen(false);
       setRestockItemsState([]);
-      fetchRestock();
-      fetchStok();
+      await store.fetchData();
+      await fetchRestock();
+      await fetchStok();
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -259,33 +279,44 @@ export default function GudangTab() {
     }
   };
 
+  // Fungsi pembantu mengambil nama item bahan atau makanan
+  const getItemName = (idItem: string, tipeItem?: string) => {
+    if (tipeItem === 'Makanan') {
+      const m = store.menu.find(x => x.id_menu === idItem);
+      return m ? m.nama_menu : (idItem || 'Bahan Jadi');
+    } else {
+      const b = store.bahan.find(x => x.id_bahan === idItem);
+      return b ? b.nama_bahan : (idItem || 'Bahan Mentah');
+    }
+  };
+
   const isChef = document.body.classList.contains('role-chef');
 
   return (
     <div className="tab-pane active" style={{ display: 'block' }}>
       <div className="header-action">
-        <h1>Restock & Data Bahan Mentah</h1>
+        <h1>Restock dan Data Gudang Restoran</h1>
         <div>
           {!isChef && (
             <button className="btn btn-primary" onClick={() => {
               setFormDataBahan({ id_bahan: '', nama_bahan: '', harga_per_unit: 0, satuan: 'pcs' });
               setModalBahanOpen(true);
-            }}>+ Tambah Bahan Master</button>
+            }}>Tambah Bahan Master</button>
           )}
         </div>
       </div>
 
-      {/* Tabel Master Bahan Mentah */}
+      {/* Tabel 1: Master Bahan Mentah */}
       <div className="card mb-20">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ margin: 0 }}>Daftar Bahan Mentah & Stok Global</h3>
+          <h3 style={{ margin: 0 }}>Daftar Bahan Mentah dan Stok Global</h3>
         </div>
         <div className="table-responsive">
           <table id="table-bahan">
             <thead>
               <tr>
                 <th>Nama Bahan</th>
-                <th>Harga Patokan (Modal) / Unit</th>
+                <th>Harga Patokan Modal per Unit</th>
                 <th>Satuan</th>
                 <th>Stok Tersedia</th>
                 <th>Aksi</th>
@@ -293,7 +324,7 @@ export default function GudangTab() {
             </thead>
             <tbody>
               {bahanList.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center' }}>Belum ada bahan</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center' }}>Belum ada bahan mentah</td></tr>
               ) : bahanList.map(b => {
                 const stokVal = globalStok[b.id_bahan] || 0;
                 return (
@@ -319,10 +350,46 @@ export default function GudangTab() {
         </div>
       </div>
 
-      {/* Riwayat Restock Pembelian Bahan */}
+      {/* Tabel 2: Master Bahan Jadi Khusus Restock */}
+      <div className="card mb-20">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>Daftar Bahan Jadi</h3>
+        </div>
+        <div className="table-responsive">
+          <table id="table-bahan-jadi">
+            <thead>
+              <tr>
+                <th>Nama Menu Jadi</th>
+                <th>Harga Jual</th>
+                <th>HPP Modal Terakhir</th>
+                <th>Stok Global Tersedia</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bahanJadiList.length === 0 ? (
+                <tr><td colSpan={4} style={{ textAlign: 'center' }}>Belum ada bahan jadi</td></tr>
+              ) : bahanJadiList.map(m => {
+                const stokMkn = globalStokMakanan[m.id_menu] || 0;
+                return (
+                  <tr key={m.id_menu}>
+                    <td className="font-weight-bold">{m.nama_menu}</td>
+                    <td>{formatCurrency(m.harga_jual)}</td>
+                    <td>{formatCurrency(m.hpp_terakhir || 0)}</td>
+                    <td className={stokMkn <= 0 ? "text-danger font-weight-bold" : "text-success font-weight-bold"}>
+                      {stokMkn.toFixed(0)} Porsi
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Tabel 3: Riwayat Restock Pembelian */}
       <div className="header-action mt-20" style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ display: 'inline-block', margin: 0 }}>Log Pembelian Bahan (Restock)</h2>
+          <h2 style={{ display: 'inline-block', margin: 0 }}>Log Pembelian Restock Pembelian</h2>
         </div>
         {!isChef && (
           <button className="btn btn-success" style={{ fontWeight: 'bold', padding: '10px 20px' }} onClick={() => {
@@ -330,17 +397,17 @@ export default function GudangTab() {
             setRestockPembeli('');
             setRestockItemsState([]);
             setModalRestockOpen(true);
-          }}>+ Input Restock Massal (Batch)</button>
+          }}>Input Restock Pembelian</button>
         )}
       </div>
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ display: 'inline-block', margin: 0 }}>Riwayat Belanja Bahan</h3>
+          <h3 style={{ display: 'inline-block', margin: 0 }}>Riwayat Belanja Restock</h3>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <label style={{ fontSize: '0.9rem', margin: 0 }}>Filter Minggu:</label>
             <select className="form-control" style={{ width: 'auto' }} value={selectedWeek} onChange={e => { setSelectedWeek(e.target.value); setCurrentPage(1); }}>
-              <option value="all">Semua Minggu (Semua Data)</option>
+              <option value="all">Semua Minggu Semua Data</option>
               {activeWeeks.map(w => (
                 <option key={w[0]} value={w[0]}>{w[1]}</option>
               ))}
@@ -359,9 +426,10 @@ export default function GudangTab() {
             <thead>
               <tr>
                 <th>Tanggal</th>
-                <th>Nama Bahan</th>
-                <th>Jumlah (Qty)</th>
-                <th>Harga Aktual/Unit</th>
+                <th>Tipe Item</th>
+                <th>Nama Item</th>
+                <th>Jumlah Qty</th>
+                <th>Harga Aktual per Unit</th>
                 <th>Total Biaya</th>
                 <th>Pembeli</th>
                 <th>Aksi</th>
@@ -369,17 +437,18 @@ export default function GudangTab() {
             </thead>
             <tbody>
               {restockList.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center' }}>Belum ada log pembelian</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center' }}>Belum ada log pembelian restock</td></tr>
               ) : restockList.map(d => {
-                const bahan = store.bahan.find(b => b.id_bahan === d.id_bahan);
-                const namaBahan = bahan ? bahan.nama_bahan : (d.id_bahan || "Bahan Mentah");
+                const tipeItem = d.tipe_item === 'Makanan' ? 'Bahan Jadi' : 'Bahan Mentah';
+                const namaItem = getItemName(d.id_bahan, d.tipe_item);
                 const wr = getWeekRange(d.tanggal);
                 const isClosed = wr ? store.periode_ditutup.includes(wr.key) : false;
                 
                 return (
                   <tr key={d.id_pengeluaran}>
                     <td>{d.tanggal}</td>
-                    <td>{namaBahan}</td>
+                    <td><span className={`badge ${d.tipe_item === 'Makanan' ? 'badge-info' : 'badge-secondary'}`}>{tipeItem}</span></td>
+                    <td className="font-weight-bold">{namaItem}</td>
                     <td className="font-weight-bold text-primary">+{d.jumlah_unit}</td>
                     <td>{formatCurrency(d.harga_aktual_per_unit || d.total_biaya / d.jumlah_unit)}</td>
                     <td className="text-danger font-weight-bold">{formatCurrency(d.total_biaya)}</td>
@@ -412,7 +481,7 @@ export default function GudangTab() {
                 <input type="text" required value={formDataBahan.nama_bahan} onChange={e => setFormDataBahan({...formDataBahan, nama_bahan: e.target.value})} />
               </div>
               <div className="form-group">
-                <label>Harga Patokan (Modal) / Unit ($)</label>
+                <label>Harga Patokan Modal per Unit</label>
                 <input type="number" step="0.01" required value={formDataBahan.harga_per_unit} onChange={e => setFormDataBahan({...formDataBahan, harga_per_unit: Number(e.target.value)})} />
               </div>
               <div className="form-group">
@@ -432,14 +501,14 @@ export default function GudangTab() {
         </div>
       )}
 
-      {/* Modal Multi-Item Batch Restock */}
+      {/* Modal Batch Restock Pembelian */}
       {modalRestockOpen && (
         <div className="modal" style={{ display: 'flex' }}>
-          <div className="modal-content" style={{ maxWidth: '700px', width: '90%' }}>
+          <div className="modal-content" style={{ maxWidth: '750px', width: '90%' }}>
             <span className="close-btn" onClick={() => setModalRestockOpen(false)}>&times;</span>
-            <h2 style={{ marginTop: 0 }}>Input Pembelian Bahan (Restock Massal)</h2>
+            <h2 style={{ marginTop: 0 }}>Input Pembelian Restock Massal</h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '15px' }}>
-              Masukkan daftar pembelian restock bahan mentah sekaligus.
+              Masukkan daftar pembelian restock bahan mentah atau bahan jadi sekaligus
             </p>
 
             <form onSubmit={handleSaveRestockBatch}>
@@ -449,54 +518,69 @@ export default function GudangTab() {
                   <input type="date" className="form-control" required value={restockTanggal} onChange={e => setRestockTanggal(e.target.value)} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label style={{ fontWeight: 'bold' }}>Nama Pembeli (IC Pegawai)</label>
+                  <label style={{ fontWeight: 'bold' }}>Nama Pembeli IC Pegawai</label>
                   <select className="form-control" required value={restockPembeli} onChange={e => setRestockPembeli(e.target.value)}>
-                    <option value="">-- Pilih Pembeli --</option>
+                    <option value="">Pilih Pembeli</option>
                     {store.pegawai.filter(p => p.status_kontrak === 'Aktif').map(p => (
-                      <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} ({p.jabatan})</option>
+                      <option key={p.nama_ic} value={p.nama_ic}>{p.nama_ic} - {p.jabatan}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              {/* Action bar for batch restock */}
+              {/* Tombol aksi cepat */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '8px' }}>
                 <button type="button" className="btn btn-sm btn-info" onClick={handleAutoLoadAllRestockItems}>
-                  ⚡ Muat Semua Bahan Mentah
+                  Muat Semua Bahan Mentah
                 </button>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   Total item: {restockItems.length}
                 </span>
               </div>
 
-              {/* Dynamic list of restock items */}
+              {/* Daftar item restock */}
               <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '15px' }}>
                 {restockItems.length === 0 ? (
                   <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
-                    Belum ada item ditambahkan. Klik <strong>"+ Tambah Item Restock"</strong> atau <strong>"⚡ Muat Semua Bahan"</strong> di atas.
+                    Belum ada item ditambahkan. Klik Tambah Item Restock di bawah.
                   </div>
                 ) : (
                   restockItems.map((item, idx) => {
-                    const b = store.bahan.find(x => x.id_bahan === item.id_bahan);
-                    const satuan = b ? b.satuan : 'Unit';
                     const qtyNum = parseFloat(String(item.qty)) || 0;
                     const hargaNum = parseFloat(String(item.harga)) || 0;
                     const subtotal = qtyNum * hargaNum;
 
                     return (
                       <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', background: 'var(--bg-card)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                        <select className="form-control" style={{ flex: 2 }} required value={item.id_bahan} onChange={e => {
+                        
+                        <select className="form-control" style={{ flex: 3 }} required value={item.id_item ? `${item.tipe_item}_${item.id_item}` : ''} onChange={e => {
                           const val = e.target.value;
-                          const bObj = store.bahan.find(x => x.id_bahan === val);
+                          if (!val) return;
+                          const [t, id] = val.split('_');
                           const newItems = [...restockItems];
-                          newItems[idx].id_bahan = val;
-                          if (bObj) newItems[idx].harga = bObj.harga_per_unit || 0;
+                          newItems[idx].tipe_item = t as 'Bahan' | 'Makanan';
+                          newItems[idx].id_item = id;
+
+                          if (t === 'Makanan') {
+                            const mObj = store.menu.find(x => x.id_menu === id);
+                            if (mObj) newItems[idx].harga = mObj.hpp_terakhir || mObj.harga_jual || 0;
+                          } else {
+                            const bObj = store.bahan.find(x => x.id_bahan === id);
+                            if (bObj) newItems[idx].harga = bObj.harga_per_unit || 0;
+                          }
                           setRestockItemsState(newItems);
                         }}>
-                          <option value="">-- Pilih Bahan --</option>
-                          {store.bahan.map(b => (
-                            <option key={b.id_bahan} value={b.id_bahan}>{b.nama_bahan} ({b.satuan})</option>
-                          ))}
+                          <option value="">Pilih Item Restock</option>
+                          <optgroup label="Bahan Mentah Perlu Dimasak">
+                            {store.bahan.map(b => (
+                              <option key={`Bahan_${b.id_bahan}`} value={`Bahan_${b.id_bahan}`}>Bahan Mentah: {b.nama_bahan}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Bahan Jadi Langsung Siap Jual">
+                            {bahanJadiList.map(m => (
+                              <option key={`Makanan_${m.id_menu}`} value={`Makanan_${m.id_menu}`}>Bahan Jadi: {m.nama_menu}</option>
+                            ))}
+                          </optgroup>
                         </select>
 
                         <div style={{ flex: 1 }}>
@@ -505,7 +589,7 @@ export default function GudangTab() {
                             min="0" 
                             step="0.01" 
                             className="form-control" 
-                            placeholder={`Qty (${satuan})`} 
+                            placeholder="Jumlah Qty" 
                             required 
                             value={item.qty || ''} 
                             onChange={e => {
@@ -522,7 +606,7 @@ export default function GudangTab() {
                             min="0" 
                             step="0.01" 
                             className="form-control" 
-                            placeholder="Harga/Unit ($)" 
+                            placeholder="Harga Modal per Unit" 
                             required 
                             value={item.harga} 
                             onChange={e => {
@@ -550,9 +634,9 @@ export default function GudangTab() {
 
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
                 <button type="button" className="btn btn-sm btn-primary" onClick={() => {
-                  setRestockItemsState([...restockItems, { id_bahan: '', qty: 0, harga: 0 }]);
+                  setRestockItemsState([...restockItems, { id_item: '', tipe_item: 'Bahan', qty: 0, harga: 0 }]);
                 }}>
-                  + Tambah Item Restock
+                  Tambah Item Restock
                 </button>
               </div>
 
@@ -564,7 +648,7 @@ export default function GudangTab() {
         </div>
       )}
 
-      {/* Reusable Modern Confirmation Modal */}
+      {/* Confirmation Modal */}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}

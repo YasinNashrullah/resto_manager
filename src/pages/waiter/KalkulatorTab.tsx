@@ -20,8 +20,9 @@ export default function KalkulatorTab() {
   const [salesItems, setSalesItems] = useState<Record<string, { qty: number, id_menu: string }>>({});
   const [totalRevenue, setTotalRevenue] = useState(0);
 
-  const menuSatuan = store.menu.filter(m => m.tipe_menu === 'Satuan' || m.tipe_menu === 'Satuan (Ala Carte)');
-  const menuPaket = store.menu.filter(m => m.tipe_menu === 'Paket');
+  const activeMenu = store.menu.filter(m => m.tampil_di_kalkulator !== false);
+  const menuSatuan = activeMenu.filter(m => m.tipe_menu === 'Satuan' || m.tipe_menu === 'Satuan (Ala Carte)');
+  const menuPaket = activeMenu.filter(m => m.tipe_menu === 'Paket');
 
   const checkAutoReset = () => {
     const offDutyTime = localStorage.getItem('kalku_offDutyTimestamp');

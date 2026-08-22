@@ -55,11 +55,24 @@ export default function ReviewDutyTab() {
     }
   };
 
+  // Helper format waktu ke HH:MM agar kompatibel dengan input time
+  const formatTimeForInput = (val: string | null | undefined) => {
+    if (!val) return '';
+    const clean = val.trim().replace('.', ':');
+    const parts = clean.split(':');
+    if (parts.length >= 2) {
+      const h = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      return `${h}:${m}`;
+    }
+    return clean;
+  };
+
   const openModal = (draft: any) => {
     setSelectedDraft(draft);
     setEditNamaPegawai(draft.nama_pegawai || '');
-    setEditWaktuMulai(draft.waktu_mulai || '');
-    setEditWaktuSelesai(draft.waktu_selesai || '');
+    setEditWaktuMulai(formatTimeForInput(draft.waktu_mulai));
+    setEditWaktuSelesai(formatTimeForInput(draft.waktu_selesai));
     setEditTanggal(draft.created_at ? draft.created_at.split('T')[0] : '');
     setEditOmset(Number(draft.total_omset) || 0);
     setEditItems(draft.detail_jual || []);
@@ -129,7 +142,7 @@ export default function ReviewDutyTab() {
     const jsonStr = JSON.stringify([jsonObj], null, 2);
     
     navigator.clipboard.writeText(jsonStr).then(() => {
-      // alert removed per user request
+      // JSON disalin ke clipboard
     }).catch(err => {
       alert('Gagal menyalin JSON: ' + err);
     });
@@ -138,8 +151,8 @@ export default function ReviewDutyTab() {
   const handleMarkAsValidated = (id: string) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Validasi Laporan',
-      message: 'Tandai sebagai tervalidasi? Draft ini akan disembunyikan dari daftar pending.',
+      title: 'Tandai Selesai',
+      message: 'Yakin ingin menandai draft ini sebagai selesai',
       onConfirm: () => executeMarkAsValidated(id)
     });
   };
@@ -155,7 +168,7 @@ export default function ReviewDutyTab() {
       if (error) throw error;
       fetchDrafts();
     } catch (err: any) {
-      alert('Gagal memvalidasi: ' + err.message);
+      alert('Gagal memproses draft: ' + err.message);
     } finally {
       setIsDeleting(false);
       setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -165,8 +178,8 @@ export default function ReviewDutyTab() {
   const handleDeleteDraft = (id: string) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Hapus Draft Laporan',
-      message: 'Apakah Anda yakin ingin menghapus draft laporan waiter ini?',
+      title: 'Hapus Draft',
+      message: 'Yakin ingin menghapus draft ini',
       onConfirm: () => executeDeleteDraft(id)
     });
   };
@@ -182,7 +195,6 @@ export default function ReviewDutyTab() {
       if (error) throw error;
       fetchDrafts();
     } catch (err: any) {
-      console.error("Gagal menghapus draft:", err);
       alert('Gagal menghapus draft: ' + err.message);
     } finally {
       setIsDeleting(false);

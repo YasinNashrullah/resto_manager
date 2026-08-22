@@ -653,6 +653,7 @@ Format Template JSON:
             payloads.pengeluaran.push({
               tanggal: struk.tanggal,
               id_bahan: proc.id_bahan,
+              tipe_item: proc.is_bahan ? 'Bahan' : 'Makanan',
               nama_pembeli: masterPegawaiMatch.nama_ic,
               jumlah_unit: floorToTwo(proc.qty),
               harga_aktual_per_unit: proc.hargaPerUnit,
